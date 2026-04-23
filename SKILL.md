@@ -78,6 +78,8 @@ python -m evolution.skills.evolve_skill \
 
 **Default model values in `evolve_skill.py` are OpenAI models** (`openai/gpt-4.1`, `openai/gpt-4.1-mini`) — these will fail if you only have NVIDIA tokens. Pass `--optimizer-model` and `--eval-model` explicitly (see Option A below).
 
+**Note:** The repo defaults have been patched to `openai/nvidia-proxy/...` models. If you are on an older checkout, you still need to pass models explicitly.
+
 ## Architecture
 
 The optimization loop (Phase 1 only):
@@ -155,30 +157,42 @@ cd /Users/kieranlal/workspace/hermes-agent-self-evolution
 python3 -m evolution.skills.evolve_skill \
     --skill github-code-review \
     --iterations 10 \
-    --optimizer-model "nvidia-proxy/meta/llama-3.1-405b-instruct" \
-    --eval-model "nvidia-proxy/moonshotai/kimi-k2.5"
+    --optimizer-model "openai/nvidia-proxy/meta/llama-3.1-405b-instruct" \
+    --eval-model "openai/nvidia-proxy/moonshotai/kimi-k2.5"
+```
+
+**CRITICAL: Model names must use `openai/` prefix.**
+
+litellm requires the provider prefix when using a custom `OPENAI_BASE_URL`. Pass `openai/nvidia-proxy/MODEL` not just `nvidia-proxy/MODEL`. Without this prefix you get:
+```
+BadRequestError: LLM Provider NOT provided. You passed model=nvidia-proxy/...
 ```
 
 **Available models via nvidia-proxy:**
-- `moonshotai/kimi-k2.5`
-- `minimaxai/minimax-m2.5`
-- `nvidia/nemotron-3-super-120b-a12b`
-- `meta/llama-3.1-405b-instruct`
-- `deepseek-ai/deepseek-v3.2`
-- `qwen/qwen3.5-397b-a17b`
+- `openai/nvidia-proxy/moonshotai/kimi-k2.5`
+- `openai/nvidia-proxy/minimaxai/minimax-m2.5`
+- `openai/nvidia-proxy/nvidia/nemotron-3-super-120b-a12b`
+- `openai/nvidia-proxy/meta/llama-3.1-405b-instruct`
+- `openai/nvidia-proxy/deepseek-ai/deepseek-v3.2`
+- `openai/nvidia-proxy/qwen/qwen3.5-397b-a17b`
 
 **Why this works:** `dspy.LM()` routes through litellm, which respects `OPENAI_BASE_URL` and `OPENAI_API_KEY`. The proxy presents an OpenAI-compatible API and transparently rotates NVIDIA tokens from `~/.enclave/nvidia_{1..5}.txt`.
 
 **Verify proxy is running:**
 ```bash
 ps aux | grep "[k]ilo-proxy.py"        # should show a process
-curl -s http://localhost:8080/v1/models  # should return model list
+python3 -c "from openai import OpenAI; c=OpenAI(base_url='http://localhost:8080/v1',api_key='dummy'); print(c.models.list().data[0].id)"
 tail ~/.local/share/kilo/log/token-rotation.log | grep "nvidia-proxy.*Loaded"
 ```
 
 **If proxy is not running:**
 ```bash
 bash ~/workspace/nano2/scripts/restart-kilo-proxy.sh
+```
+
+**Quick validation (no LLM calls):**
+```bash
+python3 -m evolution.skills.evolve_skill --skill github-code-review --dry-run
 ```
 
 ### Option B: Direct NVIDIA API (single token, no rotation)
@@ -211,6 +225,47 @@ python3 -m evolution.skills.evolve_skill \
 ```
 
 **Python path note:** Use `python3` or the venv python at `/Users/kieranlal/workspace/.venv/bin/python3`. System `python` does not exist.
+
+## Troubleshooting
+
+### `BadRequestError: LLM Provider NOT provided`
+
+You passed a model name without the `openai/` prefix. When using `OPENAI_BASE_URL`, litellm needs the provider prefix:
+```bash
+# WRONG:
+--optimizer-model "nvidia-proxy/meta/llama-3.1-405b-instruct"
+
+# CORRECT:
+--optimizer-model "openai/nvidia-proxy/meta/llama-3.1-405b-instruct"
+```
+
+### Timeouts / hangs during optimization
+
+NVIDIA endpoints are slow (~20-45s per call). MIPROv2 bootstraps 6 fewshot sets + runs 10 trials by default. This easily exceeds 10 minutes.
+
+**Solutions:**
+- Use `--dry-run` first to validate setup without LLM calls
+- Use a small golden dataset instead of synthetic generation:
+  ```bash
+  --eval-source golden --dataset-path datasets/skills/github-code-review/
+  ```
+- Reduce iterations: `--iterations 1` (MIPROv2 still runs 10 trials internally; this only affects GEPA)
+- Be patient — the process is working, just slow
+
+### `ValueError: Trainset must have at least 2 examples if no valset specified`
+
+This happens when MIPROv2 fallback is triggered and `valset` is not passed. Fixed in current code, but if you see this on an older checkout, ensure your dataset has at least 2 train examples or pass an explicit valset.
+
+### `GEPA.__init__() got an unexpected keyword argument 'max_steps'`
+
+GEPA does not accept `max_steps`. The code auto-falls back to MIPROv2. If you are editing the code directly, use `max_full_evals` for GEPA or switch to MIPROv2.
+
+### Default models already patched
+
+The repo's default models have been changed from `openai/gpt-4.1` to `openai/nvidia-proxy/...`. If you pull updates and want OpenAI models again, pass them explicitly:
+```bash
+--optimizer-model "openai/gpt-4.1" --eval-model "openai/gpt-4.1-mini"
+```
 
 ## What's Missing / TODO
 
