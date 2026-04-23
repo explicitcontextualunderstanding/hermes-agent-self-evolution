@@ -174,6 +174,7 @@ def evolve(
         optimized_module = optimizer.compile(
             baseline_module,
             trainset=trainset,
+            valset=valset,
         )
 
     elapsed = time.time() - start_time
