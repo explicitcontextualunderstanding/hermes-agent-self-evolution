@@ -169,7 +169,7 @@ def evolve(
         console.print(f"[yellow]GEPA not available ({e}), falling back to MIPROv2[/yellow]")
         optimizer = dspy.MIPROv2(
             metric=skill_fitness_metric,
-            auto="light",
+            auto=None,
         )
         optimized_module = optimizer.compile(
             baseline_module,
