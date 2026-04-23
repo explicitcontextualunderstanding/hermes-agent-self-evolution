@@ -13,7 +13,10 @@ import dspy
 
 
 def load_skill(skill_path: Path) -> dict:
-    """Load a skill file and parse its frontmatter + body.
+    """Load a skill directory and concatenate all .md files.
+
+    Reads SKILL.md first, then all other .md files in the same directory,
+    ordered by filename for determinism. Returns the combined corpus.
 
     Returns:
         {
@@ -25,16 +28,28 @@ def load_skill(skill_path: Path) -> dict:
             "description": str,
         }
     """
-    raw = skill_path.read_text()
+    skill_dir = skill_path.parent
+    skill_files = sorted(skill_dir.glob("*.md"))
 
-    # Parse YAML frontmatter
+    # Ensure SKILL.md comes first if it exists
+    if skill_path in skill_files:
+        skill_files.remove(skill_path)
+        skill_files.insert(0, skill_path)
+
+    raw_parts = []
+    for f in skill_files:
+        raw_parts.append(f"\n\n# === {f.name} ===\n\n")
+        raw_parts.append(f.read_text())
+    raw = "".join(raw_parts)
+
+    # Parse YAML frontmatter from SKILL.md only
     frontmatter = ""
     body = raw
-    if raw.strip().startswith("---"):
-        parts = raw.split("---", 2)
+    skill_raw = skill_path.read_text()
+    if skill_raw.strip().startswith("---"):
+        parts = skill_raw.split("---", 2)
         if len(parts) >= 3:
             frontmatter = parts[1].strip()
-            body = parts[2].strip()
 
     # Extract name and description from frontmatter
     name = ""
@@ -49,7 +64,7 @@ def load_skill(skill_path: Path) -> dict:
         "path": skill_path,
         "raw": raw,
         "frontmatter": frontmatter,
-        "body": body,
+        "body": raw,  # full corpus is the optimizable body
         "name": name,
         "description": description,
     }
