@@ -177,6 +177,7 @@ def evolve(
             trainset=trainset,
             valset=valset,
             num_trials=1,
+            minibatch=False,
         )
 
     elapsed = time.time() - start_time
