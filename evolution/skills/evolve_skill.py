@@ -6,6 +6,7 @@ Usage:
 """
 
 import json
+import logging
 import sys
 import time
 from pathlib import Path
@@ -33,6 +34,67 @@ from evolution.skills.skill_module import (
 console = Console()
 
 
+class ProgressLogger:
+    """Writes structured JSONL checkpoints so a run can be monitored and resumed."""
+
+    def __init__(self, path: Optional[Path] = None):
+        self.path = path
+        self._start = time.time()
+        if path:
+            path.parent.mkdir(parents=True, exist_ok=True)
+
+    def _write(self, record: dict):
+        if not self.path:
+            return
+        record["_ts"] = datetime.utcnow().isoformat() + "Z"
+        record["_elapsed"] = round(time.time() - self._start, 2)
+        with open(self.path, "a") as f:
+            f.write(json.dumps(record) + "\n")
+
+    def log(self, phase: str, data: dict):
+        self._write({"phase": phase, **data})
+
+
+class MiproCheckpointHandler(logging.Handler):
+    """Intercepts MIPROv2 log lines and writes trial scores to a JSONL progress file."""
+
+    def __init__(self, progress: ProgressLogger):
+        super().__init__()
+        self.progress = progress
+        self.scores = []
+        self.best_score = None
+
+    def emit(self, record):
+        msg = record.getMessage()
+        # Catch: "Score: 51.57 with parameters ['Predictor 0: Instruction 2', ...]"
+        if "Score:" in msg and "with parameters" in msg:
+            try:
+                score_part = msg.split("Score:")[1].split("with parameters")[0].strip()
+                score = float(score_part)
+                self.scores.append(score)
+                if self.best_score is None or score > self.best_score:
+                    self.best_score = score
+                params = msg.split("with parameters")[1].strip()
+                self.progress.log(
+                    "trial",
+                    {
+                        "trial": len(self.scores),
+                        "score": score,
+                        "best_score": self.best_score,
+                        "params": params,
+                    },
+                )
+            except Exception:
+                pass
+        # Catch: "Best score so far: 51.57"
+        elif "Best score so far:" in msg:
+            try:
+                best = float(msg.split("Best score so far:")[1].strip())
+                self.progress.log("best_score_update", {"best_score": best})
+            except Exception:
+                pass
+
+
 def evolve(
     skill_name: str,
     iterations: int = 10,
@@ -48,6 +110,7 @@ def evolve(
     num_candidates: int = 10,
     num_threads: int = 5,
     auto_mode: Optional[str] = None,
+    progress_file: Optional[str] = None,
 ):
     """Main evolution function — orchestrates the full optimization loop."""
 
@@ -60,6 +123,9 @@ def evolve(
     )
     if hermes_repo:
         config.hermes_agent_path = Path(hermes_repo)
+
+    progress = ProgressLogger(Path(progress_file) if progress_file else None)
+    progress.log("start", {"skill": skill_name, "model": eval_model, "auto_mode": auto_mode})
 
     # ── 1. Find and load the skill ──────────────────────────────────────
     console.print(f"\n[bold cyan]🧬 Hermes Agent Self-Evolution[/bold cyan] — Evolving skill: [bold]{skill_name}[/bold]\n")
@@ -84,6 +150,8 @@ def evolve(
     console.print(f"  Name: {skill['name']}")
     console.print(f"  Size: {len(skill['raw']):,} chars")
     console.print(f"  Description: {skill['description'][:80]}...")
+
+    progress.log("skill_loaded", {"name": skill['name'], "size": len(skill['raw'])})
 
     if dry_run:
         console.print(f"\n[bold green]DRY RUN — setup validated successfully.[/bold green]")
@@ -130,6 +198,7 @@ def evolve(
         sys.exit(1)
 
     console.print(f"  Split: {len(dataset.train)} train / {len(dataset.val)} val / {len(dataset.holdout)} holdout")
+    progress.log("dataset_ready", {"train": len(dataset.train), "val": len(dataset.val), "holdout": len(dataset.holdout)})
 
     # ── 3. Validate constraints on baseline ─────────────────────────────
     console.print(f"\n[bold]Validating baseline constraints[/bold]")
@@ -142,6 +211,8 @@ def evolve(
         console.print(f"  [{color}]{icon} {c.constraint_name}[/{color}]: {c.message}")
         if not c.passed:
             all_pass = False
+
+    progress.log("constraints_checked", {"passed": all_pass, "checks": [{"name": c.constraint_name, "passed": c.passed} for c in baseline_constraints]})
 
     if not all_pass:
         console.print("[yellow]⚠ Baseline skill has constraint violations — proceeding anyway[/yellow]")
@@ -166,7 +237,13 @@ def evolve(
     # ── 5. Run GEPA optimization ────────────────────────────────────────
     console.print(f"\n[bold cyan]Running GEPA optimization ({iterations} iterations)...[/bold cyan]\n")
 
+    # Wire up MIPROv2 trial capture to progress logger
+    mipro_handler = MiproCheckpointHandler(progress)
+    mipro_handler.setLevel(logging.INFO)
+    logging.getLogger("dspy.teleprompt.mipro_optimizer_v2").addHandler(mipro_handler)
+
     start_time = time.time()
+    progress.log("optimization_start", {"trials_planned": num_trials if not auto_mode else 10})
 
     try:
         optimizer = dspy.GEPA(
@@ -209,6 +286,7 @@ def evolve(
 
     elapsed = time.time() - start_time
     console.print(f"\n  Optimization completed in {elapsed:.1f}s")
+    progress.log("optimization_complete", {"elapsed": elapsed, "trials_completed": len(mipro_handler.scores), "best_score": mipro_handler.best_score})
 
     # ── 6. Extract evolved skill text ───────────────────────────────────
     # The optimized module's instructions contain the evolved skill text
@@ -226,6 +304,8 @@ def evolve(
         if not c.passed:
             all_pass = False
 
+    progress.log("evolved_constraints", {"passed": all_pass})
+
     if not all_pass:
         console.print("[red]✗ Evolved skill FAILED constraints — not deploying[/red]")
         # Still save for inspection
@@ -233,6 +313,7 @@ def evolve(
         output_path.parent.mkdir(parents=True, exist_ok=True)
         output_path.write_text(evolved_full)
         console.print(f"  Saved failed variant to {output_path}")
+        progress.log("failed", {"reason": "constraints"})
         return
 
     # ── 8. Evaluate on holdout set ──────────────────────────────────────
@@ -256,6 +337,7 @@ def evolve(
     avg_baseline = sum(baseline_scores) / max(1, len(baseline_scores))
     avg_evolved = sum(evolved_scores) / max(1, len(evolved_scores))
     improvement = avg_evolved - avg_baseline
+    progress.log("holdout", {"baseline": avg_baseline, "evolved": avg_evolved, "improvement": improvement})
 
     # ── 9. Report results ───────────────────────────────────────────────
     table = Table(title="Evolution Results")
@@ -314,14 +396,21 @@ def evolve(
     }
     (output_dir / "metrics.json").write_text(json.dumps(metrics, indent=2))
 
+    # Also write progress file into output dir for archival
+    if progress.path:
+        (output_dir / "progress.jsonl").write_text(progress.path.read_text())
+
     console.print(f"\n  Output saved to {output_dir}/")
+    progress.log("saved", {"output_dir": str(output_dir)})
 
     if improvement > 0:
         console.print(f"\n[bold green]✓ Evolution improved skill by {improvement:+.3f} ({improvement/max(0.001, avg_baseline)*100:+.1f}%)[/bold green]")
         console.print(f"  Review the diff: diff {output_dir}/baseline_skill.md {output_dir}/evolved_skill.md")
+        progress.log("complete", {"status": "improved", "improvement": improvement})
     else:
         console.print(f"\n[yellow]⚠ Evolution did not improve skill (change: {improvement:+.3f})[/yellow]")
         console.print("  Try: more iterations, better eval dataset, or different optimizer model")
+        progress.log("complete", {"status": "no_improvement", "improvement": improvement})
 
 
 @click.command()
@@ -340,7 +429,8 @@ def evolve(
 @click.option("--num-threads", default=5, help="Parallel threads for MIPROv2 evaluation")
 @click.option("--auto", "auto_mode", default=None, type=click.Choice(["light", "medium", "heavy"]), help="MIPROv2 auto mode (overrides num_trials/num_candidates)")
 @click.option("--skill-path", default=None, help="Direct path to SKILL.md (bypasses repo search)")
-def main(skill, iterations, eval_source, dataset_path, optimizer_model, eval_model, hermes_repo, run_tests, dry_run, num_trials, num_candidates, num_threads, auto_mode, skill_path):
+@click.option("--progress-file", default=None, help="Path to JSONL progress checkpoint file")
+def main(skill, iterations, eval_source, dataset_path, optimizer_model, eval_model, hermes_repo, run_tests, dry_run, num_trials, num_candidates, num_threads, auto_mode, skill_path, progress_file):
     """Evolve a Hermes Agent skill using DSPy + GEPA optimization."""
     evolve(
         skill_name=skill,
@@ -357,6 +447,7 @@ def main(skill, iterations, eval_source, dataset_path, optimizer_model, eval_mod
         num_candidates=num_candidates,
         num_threads=num_threads,
         auto_mode=auto_mode,
+        progress_file=progress_file,
     )
 
 
