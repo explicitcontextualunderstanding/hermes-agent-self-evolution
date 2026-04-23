@@ -24,6 +24,11 @@ uv pip install -e ".[dev]"
 export HERMES_AGENT_REPO=~/.hermes/hermes-agent
 ```
 
+**Path notes:**
+- `uv` may be at `/opt/homebrew/bin/uv` if not on PATH
+- The venv used by Hermes is at `/Users/kieranlal/workspace/.venv/bin/python3`
+- System `python` does not exist — use `python3`
+
 ## Usage
 
 ### Phase 1: Evolve a Skill
@@ -131,8 +136,56 @@ evolution/
 
 ## Running Phase 1
 
+### Option A: Through kilo-proxy (recommended — token rotation, observability)
+
+The kilo-proxy at `localhost:8080` manages 5 NVIDIA tokens with auto-rotation on 429.
+
 ```bash
-# Requires OPENAI_API_KEY (or compatible provider key for litellm)
+# 1. Ensure proxy is running
+bash ~/workspace/nano2/scripts/restart-kilo-proxy.sh
+
+# 2. Run evolution through the proxy
+export OPENAI_BASE_URL="http://localhost:8080/v1"
+export OPENAI_API_KEY="dummy"  # proxy ignores this, uses enclave tokens
+export HERMES_AGENT_REPO=/Users/kieranlal/.hermes/hermes-agent
+
+cd /Users/kieranlal/workspace/hermes-agent-self-evolution
+python3 -m evolution.skills.evolve_skill \
+    --skill github-code-review \
+    --iterations 10 \
+    --optimizer-model "nvidia-proxy/meta/llama-3.1-405b-instruct" \
+    --eval-model "nvidia-proxy/moonshotai/kimi-k2.5"
+```
+
+**Available models via nvidia-proxy:**
+- `moonshotai/kimi-k2.5`
+- `minimaxai/minimax-m2.5`
+- `nvidia/nemotron-3-super-120b-a12b`
+- `meta/llama-3.1-405b-instruct`
+- `deepseek-ai/deepseek-v3.2`
+- `qwen/qwen3.5-397b-a17b`
+
+**Why this works:** `dspy.LM()` routes through litellm, which respects `OPENAI_BASE_URL` and `OPENAI_API_KEY`. The proxy presents an OpenAI-compatible API and transparently rotates NVIDIA tokens from `~/.enclave/nvidia_{1..5}.txt`.
+
+### Option B: Direct NVIDIA API (single token, no rotation)
+
+Same pattern as `llmwiki-compile-nvidia.sh`:
+
+```bash
+export OPENAI_BASE_URL="https://integrate.api.nvidia.com/v1"
+export OPENAI_API_KEY="$(cat ~/.enclave/nvidia_1.txt | tr -d '\n\r')"
+export HERMES_AGENT_REPO=/Users/kieranlal/.hermes/hermes-agent
+
+cd /Users/kieranlal/workspace/hermes-agent-self-evolution
+python3 -m evolution.skills.evolve_skill \
+    --skill github-code-review \
+    --iterations 10 \
+    --eval-source synthetic
+```
+
+### Option C: OpenAI direct (requires your own key)
+
+```bash
 export OPENAI_API_KEY=sk-...
 export HERMES_AGENT_REPO=/path/to/hermes-agent
 
