@@ -140,17 +140,47 @@ evolution/
 
 ## Running Phase 1
 
-### Option A: Through kilo-proxy (recommended — token rotation, observability)
+### Option A: Through kilo-proxy with Google AIStudio (fastest — recommended for testing)
 
-The kilo-proxy at `localhost:8080` manages 5 NVIDIA tokens with auto-rotation on 429.
+The kilo-proxy at `localhost:8080` manages 5 Google AIStudio tokens with auto-rotation. Google gemma-4-31b-it is ~10x faster than NVIDIA endpoints.
 
 ```bash
-# 1. Ensure proxy is running
+# 1. Ensure proxy is running and has google-proxy tokens
 bash ~/workspace/nano2/scripts/restart-kilo-proxy.sh
 
-# 2. Run evolution through the proxy
+# 2. Verify google-proxy tokens loaded
+python3 -c "
+import urllib.request, json
+req = urllib.request.Request('http://localhost:8080')
+with urllib.request.urlopen(req) as resp:
+    d = json.loads(resp.read())
+    for k, v in d['providers'].items():
+        if v.get('tokens', 0) > 0:
+            print(f'{k}: {v[\"tokens\"]} tokens')
+"
+
+# 3. Run evolution through the proxy
 export OPENAI_BASE_URL="http://localhost:8080/v1"
 export OPENAI_API_KEY="dummy"  # proxy ignores this, uses enclave tokens
+export HERMES_AGENT_REPO=/Users/kieranlal/.hermes/hermes-agent
+
+cd /Users/kieranlal/workspace/hermes-agent-self-evolution
+python3 -m evolution.skills.evolve_skill \
+    --skill github-code-review \
+    --iterations 1 \
+    --eval-source golden \
+    --dataset-path datasets/skills/github-code-review \
+    --optimizer-model "openai/google-proxy/gemma-4-31b-it" \
+    --eval-model "openai/google-proxy/gemma-4-31b-it"
+```
+
+### Option B: Through kilo-proxy with NVIDIA NIM (slower, stronger reasoning)
+
+Same proxy, but routes through NVIDIA NIM endpoints. Use this when you need the strongest reasoning from 405B or long-context evaluation from Kimi.
+
+```bash
+export OPENAI_BASE_URL="http://localhost:8080/v1"
+export OPENAI_API_KEY="dummy"
 export HERMES_AGENT_REPO=/Users/kieranlal/.hermes/hermes-agent
 
 cd /Users/kieranlal/workspace/hermes-agent-self-evolution
@@ -205,7 +235,7 @@ The proxy reads tokens from the *real* `~/.enclave/`, not the sandboxed `$HOME`.
 python3 -m evolution.skills.evolve_skill --skill github-code-review --dry-run
 ```
 
-### Option B: Direct NVIDIA API (single token, no rotation)
+### Option C: Direct NVIDIA API (single token, no rotation)
 
 Same pattern as `llmwiki-compile-nvidia.sh`:
 
@@ -221,10 +251,10 @@ python3 -m evolution.skills.evolve_skill \
     --eval-source synthetic
 ```
 
-### Option C: OpenAI direct (requires your own key)
+### Option D: OpenAI direct (requires your own key)
 
 ```bash
-export OPENAI_API_KEY=sk-...
+export OPENAI_API_KEY="sk-..."
 export HERMES_AGENT_REPO=/path/to/hermes-agent
 
 cd /Users/kieranlal/workspace/hermes-agent-self-evolution
@@ -310,8 +340,14 @@ The constraint validator expects YAML frontmatter (`---`, `name:`, `description:
 
 ### Default models already patched
 
-The repo's default models have been changed from `openai/gpt-4.1` to `openai/nvidia-proxy/...`. If you pull updates and want OpenAI models again, pass them explicitly:
+The repo's default models have been changed from `openai/gpt-4.1` to `openai/google-proxy/gemma-4-31b-it` for fast iteration. If you want NVIDIA models or OpenAI models, pass them explicitly:
+
 ```bash
+# NVIDIA (slower, stronger reasoning):
+--optimizer-model "openai/nvidia-proxy/meta/llama-3.1-405b-instruct" \
+--eval-model "openai/nvidia-proxy/moonshotai/kimi-k2.5"
+
+# OpenAI (requires your own key):
 --optimizer-model "openai/gpt-4.1" --eval-model "openai/gpt-4.1-mini"
 ```
 
