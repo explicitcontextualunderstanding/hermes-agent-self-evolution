@@ -44,7 +44,9 @@ def evolve(
     skill_path: Optional[str] = None,
     run_tests: bool = False,
     dry_run: bool = False,
-    num_trials: int = 1,
+    num_trials: int = 20,
+    num_candidates: int = 10,
+    num_threads: int = 5,
 ):
     """Main evolution function — orchestrates the full optimization loop."""
 
@@ -182,7 +184,8 @@ def evolve(
         optimizer = dspy.MIPROv2(
             metric=skill_fitness_metric,
             auto=None,
-            num_candidates=1,
+            num_candidates=num_candidates,
+            num_threads=num_threads,
         )
         optimized_module = optimizer.compile(
             baseline_module,
@@ -320,9 +323,11 @@ def evolve(
 @click.option("--hermes-repo", default=None, help="Path to hermes-agent repo")
 @click.option("--run-tests", is_flag=True, help="Run full pytest suite as constraint gate")
 @click.option("--dry-run", is_flag=True, help="Validate setup without running optimization")
-@click.option("--num-trials", default=1, help="Number of MIPROv2 optimization trials")
+@click.option("--num-trials", default=20, help="Number of MIPROv2 optimization trials")
+@click.option("--num-candidates", default=10, help="Number of instruction/few-shot candidates for MIPROv2")
+@click.option("--num-threads", default=5, help="Parallel threads for MIPROv2 evaluation")
 @click.option("--skill-path", default=None, help="Direct path to SKILL.md (bypasses repo search)")
-def main(skill, iterations, eval_source, dataset_path, optimizer_model, eval_model, hermes_repo, run_tests, dry_run, num_trials, skill_path):
+def main(skill, iterations, eval_source, dataset_path, optimizer_model, eval_model, hermes_repo, run_tests, dry_run, num_trials, num_candidates, num_threads, skill_path):
     """Evolve a Hermes Agent skill using DSPy + GEPA optimization."""
     evolve(
         skill_name=skill,
@@ -336,6 +341,8 @@ def main(skill, iterations, eval_source, dataset_path, optimizer_model, eval_mod
         run_tests=run_tests,
         dry_run=dry_run,
         num_trials=num_trials,
+        num_candidates=num_candidates,
+        num_threads=num_threads,
     )
 
 
