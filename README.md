@@ -31,7 +31,7 @@ GEPA reads execution traces to understand *why* things fail (not just that they 
 # Install
 git clone https://github.com/NousResearch/hermes-agent-self-evolution.git
 cd hermes-agent-self-evolution
-pip install -e ".[dev]"
+uv pip install -e ".[dev]"
 
 # Point at your hermes-agent repo
 export HERMES_AGENT_REPO=~/.hermes/hermes-agent
