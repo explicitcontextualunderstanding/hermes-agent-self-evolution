@@ -76,6 +76,8 @@ python -m evolution.skills.evolve_skill \
 - `evolution/core/benchmark_gate.py` — does not exist
 - `evolution/core/pr_builder.py` — does not exist
 
+**Default model values in `evolve_skill.py` are OpenAI models** (`openai/gpt-4.1`, `openai/gpt-4.1-mini`) — these will fail if you only have NVIDIA tokens. Pass `--optimizer-model` and `--eval-model` explicitly (see Option A below).
+
 ## Architecture
 
 The optimization loop (Phase 1 only):
@@ -166,6 +168,18 @@ python3 -m evolution.skills.evolve_skill \
 - `qwen/qwen3.5-397b-a17b`
 
 **Why this works:** `dspy.LM()` routes through litellm, which respects `OPENAI_BASE_URL` and `OPENAI_API_KEY`. The proxy presents an OpenAI-compatible API and transparently rotates NVIDIA tokens from `~/.enclave/nvidia_{1..5}.txt`.
+
+**Verify proxy is running:**
+```bash
+ps aux | grep "[k]ilo-proxy.py"        # should show a process
+curl -s http://localhost:8080/v1/models  # should return model list
+tail ~/.local/share/kilo/log/token-rotation.log | grep "nvidia-proxy.*Loaded"
+```
+
+**If proxy is not running:**
+```bash
+bash ~/workspace/nano2/scripts/restart-kilo-proxy.sh
+```
 
 ### Option B: Direct NVIDIA API (single token, no rotation)
 
