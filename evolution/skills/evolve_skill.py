@@ -38,8 +38,8 @@ def evolve(
     iterations: int = 10,
     eval_source: str = "synthetic",
     dataset_path: Optional[str] = None,
-    optimizer_model: str = "nvidia-proxy/meta/llama-3.1-405b-instruct",
-    eval_model: str = "nvidia-proxy/moonshotai/kimi-k2.5",
+    optimizer_model: str = "openai/nvidia-proxy/meta/llama-3.1-405b-instruct",
+    eval_model: str = "openai/nvidia-proxy/moonshotai/kimi-k2.5",
     hermes_repo: Optional[str] = None,
     run_tests: bool = False,
     dry_run: bool = False,
@@ -299,8 +299,8 @@ def evolve(
 @click.option("--eval-source", default="synthetic", type=click.Choice(["synthetic", "golden", "sessiondb"]),
               help="Source for evaluation dataset")
 @click.option("--dataset-path", default=None, help="Path to existing eval dataset (JSONL)")
-@click.option("--optimizer-model", default="nvidia-proxy/meta/llama-3.1-405b-instruct", help="Model for GEPA reflections")
-@click.option("--eval-model", default="nvidia-proxy/moonshotai/kimi-k2.5", help="Model for evaluations")
+@click.option("--optimizer-model", default="openai/nvidia-proxy/meta/llama-3.1-405b-instruct", help="Model for GEPA reflections")
+@click.option("--eval-model", default="openai/nvidia-proxy/moonshotai/kimi-k2.5", help="Model for evaluations")
 @click.option("--hermes-repo", default=None, help="Path to hermes-agent repo")
 @click.option("--run-tests", is_flag=True, help="Run full pytest suite as constraint gate")
 @click.option("--dry-run", is_flag=True, help="Validate setup without running optimization")
