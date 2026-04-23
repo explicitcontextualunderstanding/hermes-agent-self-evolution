@@ -100,8 +100,8 @@ def evolve(
     iterations: int = 10,
     eval_source: str = "synthetic",
     dataset_path: Optional[str] = None,
-    optimizer_model: str = "google-proxy/gemma-4-31b-it",
-    eval_model: str = "google-proxy/gemma-4-31b-it",
+    optimizer_model: str = "openai/google-proxy/gemma-4-31b-it",
+    eval_model: str = "openai/google-proxy/gemma-4-31b-it",
     hermes_repo: Optional[str] = None,
     skill_path: Optional[str] = None,
     run_tests: bool = False,
@@ -419,8 +419,8 @@ def evolve(
 @click.option("--eval-source", default="synthetic", type=click.Choice(["synthetic", "golden", "sessiondb"]),
               help="Source for evaluation dataset")
 @click.option("--dataset-path", default=None, help="Path to existing eval dataset (JSONL)")
-@click.option("--optimizer-model", default="google-proxy/gemma-4-31b-it", help="Model for GEPA reflections")
-@click.option("--eval-model", default="google-proxy/gemma-4-31b-it", help="Model for evaluations")
+@click.option("--optimizer-model", default="openai/google-proxy/gemma-4-31b-it", help="Model for GEPA reflections")
+@click.option("--eval-model", default="openai/google-proxy/gemma-4-31b-it", help="Model for evaluations")
 @click.option("--hermes-repo", default=None, help="Path to hermes-agent repo")
 @click.option("--run-tests", is_flag=True, help="Run full pytest suite as constraint gate")
 @click.option("--dry-run", is_flag=True, help="Validate setup without running optimization")
