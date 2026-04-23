@@ -170,6 +170,7 @@ def evolve(
         optimizer = dspy.MIPROv2(
             metric=skill_fitness_metric,
             auto=None,
+            num_candidates=1,
         )
         optimized_module = optimizer.compile(
             baseline_module,
