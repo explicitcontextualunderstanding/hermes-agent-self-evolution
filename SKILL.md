@@ -37,7 +37,8 @@ export HERMES_AGENT_REPO=~/.hermes/hermes-agent
 python -m evolution.skills.evolve_skill \
     --skill github-code-review \
     --iterations 10 \
-    --eval-source synthetic
+    --eval-source synthetic \
+    --num-trials 5
 ```
 
 Or using session history:
@@ -46,7 +47,8 @@ Or using session history:
 python -m evolution.skills.evolve_skill \
     --skill github-code-review \
     --iterations 10 \
-    --eval-source sessiondb
+    --eval-source sessiondb \
+    --num-trials 5
 ```
 
 ### Phase 2-4: Not Yet Implemented
@@ -93,7 +95,7 @@ The optimization loop (Phase 1 only):
 ## Guardrails (Implemented)
 
 - Size limits — `constraints.py` enforces skill ≤15KB
-- Skill structure validation — YAML frontmatter required
+- Skill structure validation — YAML frontmatter OR plain-markdown accepted
 - Growth limits — prevents runaway expansion
 
 **Guardrails NOT implemented:**
@@ -305,6 +307,10 @@ uv pip install optuna -p /Users/kieranlal/workspace/.venv/bin/python3
 
 GEPA in the current DSPy version does NOT accept `max_steps`. The code auto-falls back to MIPROv2. This is expected behavior. The fallback path is the only working optimizer in this environment.
 
+### gemma-4-31b-it outputs stray `` tags with `ChainOfThought`
+
+When using `dspy.ChainOfThought` with gemma-4-31b-it, the model sometimes outputs stray `` tags or truncated reasoning chains. The fix is to use `dspy.Predict` instead of `dspy.ChainOfThought` in `skill_module.py` for the task executor. This avoids parsing failures and still produces valid output because the skill instructions already contain the reasoning procedure.
+
 ### MIPROv2 parameter pitfalls
 
 If you edit the optimizer code directly, these combinations are required:
@@ -337,6 +343,58 @@ This happens when MIPROv2 fallback is triggered and `valset` is not passed. Fixe
 ### Evolved skill "fails" constraints with `skill_structure` error
 
 The constraint validator expects YAML frontmatter (`---`, `name:`, `description:`) on all skills. Some Hermes skills (e.g. `github-code-review`) do not use YAML frontmatter. This causes the evolved skill to be saved as `evolved_FAILED.md` even though the pipeline worked correctly. The constraint check is overly strict for skills that use a different format.
+
+### Evolution runs but score never improves (flat 0.65 on every trial)
+
+This is the most common silent failure. The pipeline completes, all constraints pass, but the holdout score is identical to baseline. The optimizer is not learning. Root cause is almost always a mismatch between what the dataset tests and what the skill actually does.
+
+**How to diagnose:**
+
+1. Check dataset size and split:
+   ```bash
+   wc -l datasets/skills/YOUR_SKILL/*.jsonl
+   ```
+   If total < 20, the optimizer has no variance to learn from. MIPROv2 needs at least 10+ validation examples to distinguish prompt candidates.
+
+2. Check whether examples exercise the skill's mechanics:
+   ```bash
+   cat datasets/skills/YOUR_SKILL/val.jsonl | jq -r '.task_input'
+   ```
+   For a procedural skill like `github-code-review`, the task_input should reference actual skill procedures (`git diff`, `gh pr view`, `curl` API calls, structured output format). If the examples are generic natural language ("Review a PR that adds a function without docstring"), the model never invokes the skill's commands, and the fitness function cannot measure whether the skill instructions helped.
+
+3. Check the fitness function behavior:
+   The metric in `evolution/core/fitness.py` line 123-136 does keyword overlap between `expected_behavior` and `agent_output`:
+   ```python
+   expected_words = set(expected_lower.split())
+   output_words = set(output_lower.split())
+   overlap = len(expected_words & output_words) / len(expected_words)
+   score = 0.3 + (0.7 * overlap)
+   ```
+   This means every candidate that mentions "docstring" and "missing" scores ~0.65. There is no gradient on whether the agent used `git diff`, followed the structured output format, or invoked the correct API endpoint.
+
+**Real example from github-code-review:**
+- Skill: 480 lines of procedural markdown with bash commands, gh CLI, curl API calls, structured review templates
+- Dataset: 4 abstract examples ("Review a PR that changes API without updating tests" → "Should flag that tests need updating")
+- Result: Every MIPROv2 trial scores 0.65. The optimizer is blind to the skill's actual content.
+
+**Fix:** Generate or hand-write examples that exercise the skill's mechanics:
+- For `github-code-review`: task inputs should be actual git diffs or PR numbers, expected behavior should check for specific command usage (`gh pr view`, `git diff`) and structured output sections
+- For `building-rs-humble`: task inputs should reference Docker/BuildKit commands, expected behavior should check for correct `buildah` flags or registry tags
+- For `managing-k3s-cluster`: task inputs should ask for specific `kubectl` operations
+
+**Quick synthetic generation:**
+```bash
+python3 -m evolution.skills.evolve_skill \
+    --skill github-code-review \
+    --eval-source synthetic \
+    --iterations 1
+```
+The synthetic builder reads the full skill text and generates cases. However, it may still produce abstract descriptions. Inspect the output in `datasets/skills/github-code-review/` and manually rewrite the most important examples to be procedural.
+
+**Target numbers:**
+- Minimum viable: 20 examples (10 train / 5 val / 5 holdout)
+- Recommended: 100 examples (50 train / 25 val / 25 holdout)
+- For procedural skills: at least 50% of examples should test specific commands/APIs from the skill
 
 ### Default models already patched
 
