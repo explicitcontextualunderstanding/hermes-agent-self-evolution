@@ -18,9 +18,9 @@ class EvolutionConfig:
     population_size: int = 5
 
     # LLM configuration
-    optimizer_model: str = "openai/gpt-4.1"  # Model for GEPA reflections
-    eval_model: str = "openai/gpt-4.1-mini"  # Model for LLM-as-judge scoring
-    judge_model: str = "openai/gpt-4.1"  # Model for dataset generation
+    optimizer_model: str = "nvidia-proxy/meta/llama-3.1-405b-instruct"  # Model for GEPA reflections
+    eval_model: str = "nvidia-proxy/moonshotai/kimi-k2.5"  # Model for LLM-as-judge scoring
+    judge_model: str = "nvidia-proxy/meta/llama-3.1-405b-instruct"  # Model for dataset generation
 
     # Constraints
     max_skill_size: int = 15_000  # 15KB default
