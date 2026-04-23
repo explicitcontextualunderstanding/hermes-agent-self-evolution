@@ -148,8 +148,13 @@ class ConstraintValidator:
             )
 
     def _check_skill_structure(self, text: str) -> ConstraintResult:
-        """Check that a skill file has valid YAML frontmatter and markdown body."""
-        has_frontmatter = text.strip().startswith("---")
+        """Check that a skill file has minimal valid structure.
+
+        Accepts both YAML-frontmatter skills (---) and plain-markdown skills.
+        Plain-markdown skills just need a heading or clear title.
+        """
+        stripped = text.strip()
+        has_frontmatter = stripped.startswith("---")
         has_name = "name:" in text[:500] if has_frontmatter else False
         has_description = "description:" in text[:500] if has_frontmatter else False
 
@@ -159,16 +164,27 @@ class ConstraintValidator:
                 constraint_name="skill_structure",
                 message="Skill has valid frontmatter (name + description)",
             )
-        else:
-            missing = []
-            if not has_frontmatter:
-                missing.append("YAML frontmatter (---)")
-            if not has_name:
-                missing.append("name field")
-            if not has_description:
-                missing.append("description field")
+
+        # Plain-markdown skill: needs at least a heading or clear title line
+        has_heading = stripped.startswith("#")
+        has_title_line = bool(stripped.split("\n")[0].strip())
+
+        if has_heading or has_title_line:
             return ConstraintResult(
-                passed=False,
+                passed=True,
                 constraint_name="skill_structure",
-                message=f"Skill missing: {', '.join(missing)}",
+                message="Skill has valid plain-markdown structure",
             )
+
+        missing = []
+        if not has_frontmatter:
+            missing.append("YAML frontmatter (---)")
+        if not has_name:
+            missing.append("name field")
+        if not has_description:
+            missing.append("description field")
+        return ConstraintResult(
+            passed=False,
+            constraint_name="skill_structure",
+            message=f"Skill missing: {', '.join(missing)}",
+        )

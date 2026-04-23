@@ -168,6 +168,13 @@ litellm requires the provider prefix when using a custom `OPENAI_BASE_URL`. Pass
 BadRequestError: LLM Provider NOT provided. You passed model=nvidia-proxy/...
 ```
 
+**Latency by provider:**
+- `google-proxy/gemma-4-31b-it` — ~3-5s per call, 5 free AIStudio tokens
+- `nvidia-proxy/meta/llama-3.1-405b-instruct` — ~20-45s per call, 5 NIM tokens
+- `nvidia-proxy/moonshotai/kimi-k2.5` — ~15-25s per call
+
+For testing and fast iteration, use `google-proxy/gemma-4-31b-it`. For production optimization with stronger reasoning, use `nvidia-proxy/meta/llama-3.1-405b-instruct`.
+
 **Available models via nvidia-proxy:**
 - `openai/nvidia-proxy/moonshotai/kimi-k2.5`
 - `openai/nvidia-proxy/minimaxai/minimax-m2.5`
@@ -189,6 +196,9 @@ tail ~/.local/share/kilo/log/token-rotation.log | grep "nvidia-proxy.*Loaded"
 ```bash
 bash ~/workspace/nano2/scripts/restart-kilo-proxy.sh
 ```
+
+**Proxy token path pitfall:**
+The proxy reads tokens from the *real* `~/.enclave/`, not the sandboxed `$HOME`. If `gemma_*.txt` or `nvidia_*.txt` exist only under `/Users/kieranlal/.hermes/profiles/coding/home/.enclave/`, copy them to `/Users/kieranlal/.enclave/` and restart the proxy. You'll see `No tokens loaded for provider 'google-proxy'` otherwise.
 
 **Quick validation (no LLM calls):**
 ```bash
@@ -241,24 +251,62 @@ You passed a model name without the `openai/` prefix. When using `OPENAI_BASE_UR
 
 ### Timeouts / hangs during optimization
 
-NVIDIA endpoints are slow (~20-45s per call). MIPROv2 bootstraps 6 fewshot sets + runs 10 trials by default. This easily exceeds 10 minutes.
+NVIDIA endpoints are slow (~20-45s per call). MIPROv2 bootstraps fewshot sets + runs trials. With default settings this easily exceeds 10 minutes.
 
 **Solutions:**
 - Use `--dry-run` first to validate setup without LLM calls
+- Use `google-proxy/gemma-4-31b-it` for 10x faster iteration (~3-5s per call)
 - Use a small golden dataset instead of synthetic generation:
   ```bash
   --eval-source golden --dataset-path datasets/skills/github-code-review/
   ```
-- Reduce iterations: `--iterations 1` (MIPROv2 still runs 10 trials internally; this only affects GEPA)
+  Create the dataset manually as `train.jsonl`, `val.jsonl`, `holdout.jsonl` files.
+- Reduce iterations: `--iterations 1` (only affects GEPA; MIPROv2 uses `num_trials`)
 - Be patient — the process is working, just slow
+
+### `ImportError: MIPROv2 requires optional dependency 'optuna'`
+
+Install it:
+```bash
+uv pip install optuna -p /Users/kieranlal/workspace/.venv/bin/python3
+```
+
+### `GEPA.__init__() got an unexpected keyword argument 'max_steps'`
+
+GEPA in the current DSPy version does NOT accept `max_steps`. The code auto-falls back to MIPROv2. This is expected behavior. The fallback path is the only working optimizer in this environment.
+
+### MIPROv2 parameter pitfalls
+
+If you edit the optimizer code directly, these combinations are required:
+
+```python
+# To use num_trials, you MUST set auto=None
+optimizer = dspy.MIPROv2(
+    metric=skill_fitness_metric,
+    auto=None,           # required when passing num_trials
+    num_candidates=1,    # required when auto=None
+)
+optimized_module = optimizer.compile(
+    baseline_module,
+    trainset=trainset,
+    valset=valset,
+    num_trials=1,        # now works because auto=None
+    minibatch=False,     # required for small valset (< minibatch_size default 35)
+)
+```
+
+Common errors and fixes:
+- `If auto is not None, num_candidates and num_trials cannot be set` → set `auto=None`
+- `If auto is None, num_candidates must also be provided` → add `num_candidates=1`
+- `Minibatch size cannot exceed the size of the valset` → add `minibatch=False`
 
 ### `ValueError: Trainset must have at least 2 examples if no valset specified`
 
 This happens when MIPROv2 fallback is triggered and `valset` is not passed. Fixed in current code, but if you see this on an older checkout, ensure your dataset has at least 2 train examples or pass an explicit valset.
 
-### `GEPA.__init__() got an unexpected keyword argument 'max_steps'`
+### Evolved skill "fails" constraints with `skill_structure` error
 
-GEPA does not accept `max_steps`. The code auto-falls back to MIPROv2. If you are editing the code directly, use `max_full_evals` for GEPA or switch to MIPROv2.
+The constraint validator expects YAML frontmatter (`---`, `name:`, `description:`) on all skills. Some Hermes skills (e.g. `github-code-review`) do not use YAML frontmatter. This causes the evolved skill to be saved as `evolved_FAILED.md` even though the pipeline worked correctly. The constraint check is overly strict for skills that use a different format.
 
 ### Default models already patched
 
