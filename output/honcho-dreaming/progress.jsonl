@@ -1,0 +1,2 @@
+{"phase": "start", "skill": "honcho-dreaming", "model": "openai/nvidia-proxy/nvidia/nemotron-3-super-120b-a12b", "auto_mode": "heavy", "_ts": "2026-04-26T14:15:01.753682Z", "_elapsed": 0.0}
+{"phase": "skill_loaded", "name": "honcho-dreaming", "size": 6840, "_ts": "2026-04-26T14:15:01.757822Z", "_elapsed": 0.0}

@@ -1,0 +1,32 @@
+{"phase": "start", "skill": "socket-relay-architecture", "model": "openai/nvidia-proxy/minimaxai/minimax-m2.5", "auto_mode": "heavy", "_ts": "2026-04-26T04:17:23.719598Z", "_elapsed": 0.0}
+{"phase": "skill_loaded", "name": "", "size": 5738, "_ts": "2026-04-26T04:17:23.725744Z", "_elapsed": 0.01}
+{"phase": "dataset_ready", "train": 10, "val": 5, "holdout": 5, "_ts": "2026-04-26T04:17:23.836661Z", "_elapsed": 0.12}
+{"phase": "constraints_checked", "passed": true, "checks": [{"name": "size_limit", "passed": true}, {"name": "non_empty", "passed": true}, {"name": "skill_structure", "passed": true}], "_ts": "2026-04-26T04:17:23.837396Z", "_elapsed": 0.12}
+{"phase": "optimization_start", "trials_planned": 10, "_ts": "2026-04-26T04:17:23.839629Z", "_elapsed": 0.12}
+{"phase": "trial", "trial": 1, "score": 74.05, "best_score": 74.05, "params": "['Predictor 0: Instruction 1', 'Predictor 0: Few-Shot Set 3'].", "_ts": "2026-04-26T04:23:10.547252Z", "_elapsed": 868.65}
+{"phase": "best_score_update", "best_score": 74.05, "_ts": "2026-04-26T04:23:10.553692Z", "_elapsed": 868.66}
+{"phase": "trial", "trial": 2, "score": 73.86, "best_score": 74.05, "params": "['Predictor 0: Instruction 2', 'Predictor 0: Few-Shot Set 0'].", "_ts": "2026-04-26T04:24:42.725621Z", "_elapsed": 960.83}
+{"phase": "best_score_update", "best_score": 74.05, "_ts": "2026-04-26T04:24:42.725839Z", "_elapsed": 960.83}
+{"phase": "trial", "trial": 3, "score": 70.91, "best_score": 74.05, "params": "['Predictor 0: Instruction 1', 'Predictor 0: Few-Shot Set 5'].", "_ts": "2026-04-26T04:25:57.007341Z", "_elapsed": 1035.11}
+{"phase": "best_score_update", "best_score": 74.05, "_ts": "2026-04-26T04:25:57.008106Z", "_elapsed": 1035.11}
+{"phase": "trial", "trial": 4, "score": 74.22, "best_score": 74.22, "params": "['Predictor 0: Instruction 2', 'Predictor 0: Few-Shot Set 2'].", "_ts": "2026-04-26T04:28:15.514387Z", "_elapsed": 1173.62}
+{"phase": "best_score_update", "best_score": 74.22, "_ts": "2026-04-26T04:28:15.516874Z", "_elapsed": 1173.62}
+{"phase": "trial", "trial": 5, "score": 74.65, "best_score": 74.65, "params": "['Predictor 0: Instruction 0', 'Predictor 0: Few-Shot Set 5'].", "_ts": "2026-04-26T04:30:36.615522Z", "_elapsed": 1314.72}
+{"phase": "best_score_update", "best_score": 74.65, "_ts": "2026-04-26T04:30:36.617662Z", "_elapsed": 1314.72}
+{"phase": "trial", "trial": 6, "score": 73.86, "best_score": 74.65, "params": "['Predictor 0: Instruction 2', 'Predictor 0: Few-Shot Set 0'].", "_ts": "2026-04-26T04:30:36.644567Z", "_elapsed": 1314.75}
+{"phase": "best_score_update", "best_score": 74.65, "_ts": "2026-04-26T04:30:36.645162Z", "_elapsed": 1314.75}
+{"phase": "trial", "trial": 7, "score": 72.66, "best_score": 74.65, "params": "['Predictor 0: Instruction 2', 'Predictor 0: Few-Shot Set 5'].", "_ts": "2026-04-26T04:32:21.965292Z", "_elapsed": 1420.07}
+{"phase": "best_score_update", "best_score": 74.65, "_ts": "2026-04-26T04:32:21.965777Z", "_elapsed": 1420.07}
+{"phase": "trial", "trial": 1, "score": 66.18, "best_score": 66.18, "params": "['Predictor 0: Instruction 1', 'Predictor 0: Few-Shot Set 17'].", "_ts": "2026-04-26T04:33:33.734946Z", "_elapsed": 970.02}
+{"phase": "best_score_update", "best_score": 66.18, "_ts": "2026-04-26T04:33:33.740056Z", "_elapsed": 970.02}
+{"phase": "trial", "trial": 8, "score": 72.87, "best_score": 74.65, "params": "['Predictor 0: Instruction 1', 'Predictor 0: Few-Shot Set 4'].", "_ts": "2026-04-26T04:36:21.004506Z", "_elapsed": 1659.11}
+{"phase": "best_score_update", "best_score": 74.65, "_ts": "2026-04-26T04:36:21.006441Z", "_elapsed": 1659.11}
+{"phase": "trial", "trial": 9, "score": 72.66, "best_score": 74.65, "params": "['Predictor 0: Instruction 2', 'Predictor 0: Few-Shot Set 5'].", "_ts": "2026-04-26T04:36:21.054238Z", "_elapsed": 1659.16}
+{"phase": "best_score_update", "best_score": 74.65, "_ts": "2026-04-26T04:36:21.054429Z", "_elapsed": 1659.16}
+{"phase": "trial", "trial": 10, "score": 73.71, "best_score": 74.65, "params": "['Predictor 0: Instruction 0', 'Predictor 0: Few-Shot Set 5'].", "_ts": "2026-04-26T04:36:21.097356Z", "_elapsed": 1659.2}
+{"phase": "best_score_update", "best_score": 74.65, "_ts": "2026-04-26T04:36:21.097653Z", "_elapsed": 1659.2}
+{"phase": "optimization_complete", "elapsed": 1575.7472579479218, "trials_completed": 10, "best_score": 74.65, "_ts": "2026-04-26T04:36:21.125529Z", "_elapsed": 1659.23}
+{"phase": "evolved_constraints", "passed": true, "_ts": "2026-04-26T04:36:21.134760Z", "_elapsed": 1659.24}
+{"phase": "trial", "trial": 2, "score": 62.81, "best_score": 66.18, "params": "['Predictor 0: Instruction 5', 'Predictor 0: Few-Shot Set 12'].", "_ts": "2026-04-26T04:38:42.110430Z", "_elapsed": 1278.39}
+{"phase": "best_score_update", "best_score": 66.18, "_ts": "2026-04-26T04:38:42.112303Z", "_elapsed": 1278.39}
+{"phase": "holdout", "baseline": 0.6213831556014219, "evolved": 0.6285499082674005, "improvement": 0.0071667526659786596, "_ts": "2026-04-26T04:41:54.499846Z", "_elapsed": 1992.6}

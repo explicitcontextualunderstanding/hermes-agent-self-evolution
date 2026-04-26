@@ -1,0 +1,8 @@
+{"phase": "start", "skill": "debugging-isaac-ros-containers", "model": "openai/deepseek-proxy/deepseek-v4-flash", "auto_mode": "heavy", "_ts": "2026-04-26T14:07:27.992316Z", "_elapsed": 0.0}
+{"phase": "skill_loaded", "name": "debugging-isaac-ros-containers", "size": 137259, "_ts": "2026-04-26T14:07:27.998362Z", "_elapsed": 0.01}
+{"phase": "dataset_ready", "train": 1, "val": 1, "holdout": 0, "_ts": "2026-04-26T14:09:15.060114Z", "_elapsed": 107.08}
+{"phase": "constraints_checked", "passed": false, "checks": [{"name": "size_limit", "passed": false}, {"name": "non_empty", "passed": true}, {"name": "skill_structure", "passed": true}], "_ts": "2026-04-26T14:09:15.148561Z", "_elapsed": 107.16}
+{"phase": "optimization_start", "trials_planned": 10, "_ts": "2026-04-26T14:09:15.212351Z", "_elapsed": 107.22}
+{"phase": "optimization_complete", "elapsed": 259.9359679222107, "trials_completed": 0, "best_score": null, "_ts": "2026-04-26T14:13:35.165743Z", "_elapsed": 367.17}
+{"phase": "evolved_constraints", "passed": false, "_ts": "2026-04-26T14:13:35.174888Z", "_elapsed": 367.18}
+{"phase": "failed", "reason": "constraints", "_ts": "2026-04-26T14:13:35.176013Z", "_elapsed": 367.18}

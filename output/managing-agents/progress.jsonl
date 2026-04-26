@@ -1,0 +1,2 @@
+{"phase": "start", "skill": "managing-agents", "model": "openai/deepseek-proxy/deepseek-v4-flash", "auto_mode": "medium", "_ts": "2026-04-26T06:02:49.371597Z", "_elapsed": 0.0}
+{"phase": "skill_loaded", "name": "managing-agents", "size": 51883, "_ts": "2026-04-26T06:02:49.377081Z", "_elapsed": 0.01}

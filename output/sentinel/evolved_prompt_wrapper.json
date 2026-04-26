@@ -1,0 +1,26 @@
+{
+  "signature_doc": "Complete a task following the provided skill instructions.\n\nYou are an AI agent following specific skill instructions to complete a task.\nRead the skill instructions carefully and follow the procedure described.",
+  "signature_instructions": "Complete a task following the provided skill instructions.\n\nYou are an AI agent following specific skill instructions to complete a task.\nRead the skill instructions carefully and follow the procedure described.",
+  "demos": [
+    {
+      "skill_instructions": "\n\n# === SKILL.md ===\n\n---\nname: sentinel\ndescription: |\n  K3s Test Ladder Agent with self-healing diagnostics on Jetson Orin Nano (nano1/nano2).\nproficiency_score: 0.85\ncompositional_triggers:\n  after...",
+      "task_input": "sentinel nano2 --parse-dag k3s/argo-ladder-workflow.yaml...",
+      "output": "# Argo Ladder DAG Dependencies\n\n## DAG Structure (14 Rungs)\n\n| Rung | Name | Dependencies | Status |\n|------|------|--------------|--------|\n| 01 | ARC Runner | (none) | Root |\n| 02 | K3s Infra | 01 |..."
+    },
+    {
+      "skill_instructions": "\n\n# === SKILL.md ===\n\n---\nname: sentinel\ndescription: |\n  K3s Test Ladder Agent with self-healing diagnostics on Jetson Orin Nano (nano1/nano2).\nproficiency_score: 0.85\ncompositional_triggers:\n  after...",
+      "task_input": "Sentinel CLI is not found when running 'sentinel' command. How to set it up properly?...",
+      "output": "# Sentinel CLI Not Found \u2014 Setup Instructions\n\nIf running `sentinel` returns `bash: sentinel: command not found`, the Python script isn't on your PATH. Here are the setup options:\n\n## Option 1: Run wi..."
+    },
+    {
+      "skill_instructions": "\n\n# === SKILL.md ===\n\n---\nname: sentinel\ndescription: |\n  K3s Test Ladder Agent with self-healing diagnostics on Jetson Orin Nano (nano1/nano2).\nproficiency_score: 0.85\ncompositional_triggers:\n  after...",
+      "task_input": "sentinel nano2 --watch-workflow...",
+      "output": "```\nRun: sentinel nano2 --watch-workflow\nExecuting: sentinel nano2 --watch-workflow\n\nLooking for workflow status...\n\nNote: Running the actual sentinel command would require access to the nano2 K3s clu..."
+    },
+    {
+      "skill_instructions": "\n\n# === SKILL.md ===\n\n---\nname: sentinel\ndescription: |\n  K3s Test Ladder Agent with self-healing diagnostics on Jetson Orin Nano (nano1/nano2).\nproficiency_score: 0.85\ncompositional_triggers:\n  after...",
+      "task_input": "Quick check mode is needed - the full ladder failed at rung 7 (GPU validation). How do you run only the failed rungs?...",
+      "output": "To run only the failed rungs in quick check mode, submit the Argo workflow with the `quick_check=true` parameter:\n\n```bash\nargo submit k3s/argo-ladder-workflow.yaml -n argo -p target=nano2 -p quick_ch..."
+    }
+  ]
+}

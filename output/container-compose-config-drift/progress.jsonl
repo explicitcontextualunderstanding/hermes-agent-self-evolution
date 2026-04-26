@@ -1,0 +1,10 @@
+{"phase": "start", "skill": "container-compose-config-drift", "model": "openai/deepseek-proxy/deepseek-v4-flash", "auto_mode": "medium", "_ts": "2026-04-26T07:05:03.342998Z", "_elapsed": 0.0}
+{"phase": "skill_loaded", "name": "container-compose-config-drift", "size": 20993, "_ts": "2026-04-26T07:05:03.346700Z", "_elapsed": 0.0}
+{"phase": "dataset_ready", "train": 7, "val": 3, "holdout": 5, "_ts": "2026-04-26T07:05:03.408283Z", "_elapsed": 0.07}
+{"phase": "constraints_checked", "passed": true, "checks": [{"name": "size_limit", "passed": true}, {"name": "non_empty", "passed": true}, {"name": "skill_structure", "passed": true}], "_ts": "2026-04-26T07:05:03.408972Z", "_elapsed": 0.07}
+{"phase": "optimization_start", "trials_planned": 10, "_ts": "2026-04-26T07:05:03.409655Z", "_elapsed": 0.07}
+{"phase": "optimization_complete", "elapsed": 954.2058260440826, "trials_completed": 0, "best_score": null, "_ts": "2026-04-26T07:20:57.629419Z", "_elapsed": 954.29}
+{"phase": "evolved_constraints", "passed": true, "_ts": "2026-04-26T07:20:57.636315Z", "_elapsed": 954.29}
+{"phase": "holdout", "baseline": 0.5747669669669669, "evolved": 0.7015987987987987, "improvement": 0.12683183183183178, "_ts": "2026-04-26T07:22:23.940947Z", "_elapsed": 1040.6}
+{"phase": "saved", "output_dir": "output/container-compose-config-drift/20260426_002223", "_ts": "2026-04-26T07:22:23.949235Z", "_elapsed": 1040.61}
+{"phase": "complete", "status": "improved", "improvement": 0.12683183183183178, "_ts": "2026-04-26T07:22:23.950301Z", "_elapsed": 1040.61}

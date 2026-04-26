@@ -1,0 +1,10 @@
+{"phase": "start", "skill": "cloudflared-tunnels", "model": "openai/deepseek-proxy/deepseek-v4-flash", "auto_mode": "heavy", "_ts": "2026-04-26T14:02:20.466845Z", "_elapsed": 0.0}
+{"phase": "skill_loaded", "name": "cloudflared-tunnels", "size": 34794, "_ts": "2026-04-26T14:02:20.473092Z", "_elapsed": 0.01}
+{"phase": "dataset_ready", "train": 1, "val": 1, "holdout": 0, "_ts": "2026-04-26T14:03:52.639748Z", "_elapsed": 92.17}
+{"phase": "constraints_checked", "passed": true, "checks": [{"name": "size_limit", "passed": true}, {"name": "non_empty", "passed": true}, {"name": "skill_structure", "passed": true}], "_ts": "2026-04-26T14:03:52.641396Z", "_elapsed": 92.17}
+{"phase": "optimization_start", "trials_planned": 10, "_ts": "2026-04-26T14:03:52.642871Z", "_elapsed": 92.18}
+{"phase": "optimization_complete", "elapsed": 124.2910668849945, "trials_completed": 0, "best_score": null, "_ts": "2026-04-26T14:05:56.935298Z", "_elapsed": 216.47}
+{"phase": "evolved_constraints", "passed": true, "_ts": "2026-04-26T14:05:56.938654Z", "_elapsed": 216.47}
+{"phase": "holdout", "baseline": 0.0, "evolved": 0.0, "improvement": 0.0, "_ts": "2026-04-26T14:05:56.939030Z", "_elapsed": 216.47}
+{"phase": "saved", "output_dir": "output/cloudflared-tunnels/20260426_070556", "_ts": "2026-04-26T14:05:56.943510Z", "_elapsed": 216.48}
+{"phase": "complete", "status": "no_improvement", "improvement": 0.0, "_ts": "2026-04-26T14:05:56.944109Z", "_elapsed": 216.48}

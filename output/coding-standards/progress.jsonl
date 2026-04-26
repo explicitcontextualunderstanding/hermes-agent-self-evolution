@@ -1,0 +1,10 @@
+{"phase": "start", "skill": "coding-standards", "model": "openai/nvidia-proxy/minimaxai/minimax-m2.5", "auto_mode": "heavy", "_ts": "2026-04-26T05:43:03.035551Z", "_elapsed": 0.0}
+{"phase": "start", "skill": "coding-standards", "model": "openai/nvidia-proxy/minimaxai/minimax-m2.5", "auto_mode": "heavy", "_ts": "2026-04-26T05:43:03.036961Z", "_elapsed": 0.0}
+{"phase": "skill_loaded", "name": "coding-standards", "size": 1061, "_ts": "2026-04-26T05:43:03.052253Z", "_elapsed": 0.02}
+{"phase": "skill_loaded", "name": "coding-standards", "size": 1061, "_ts": "2026-04-26T05:43:03.053058Z", "_elapsed": 0.02}
+{"phase": "dataset_ready", "train": 9, "val": 4, "holdout": 6, "_ts": "2026-04-26T05:43:03.240517Z", "_elapsed": 0.2}
+{"phase": "dataset_ready", "train": 9, "val": 4, "holdout": 6, "_ts": "2026-04-26T05:43:03.240527Z", "_elapsed": 0.21}
+{"phase": "constraints_checked", "passed": true, "checks": [{"name": "size_limit", "passed": true}, {"name": "non_empty", "passed": true}, {"name": "skill_structure", "passed": true}], "_ts": "2026-04-26T05:43:03.241174Z", "_elapsed": 0.2}
+{"phase": "constraints_checked", "passed": true, "checks": [{"name": "size_limit", "passed": true}, {"name": "non_empty", "passed": true}, {"name": "skill_structure", "passed": true}], "_ts": "2026-04-26T05:43:03.241182Z", "_elapsed": 0.21}
+{"phase": "optimization_start", "trials_planned": 10, "_ts": "2026-04-26T05:43:03.241943Z", "_elapsed": 0.21}
+{"phase": "optimization_start", "trials_planned": 10, "_ts": "2026-04-26T05:43:03.241946Z", "_elapsed": 0.21}

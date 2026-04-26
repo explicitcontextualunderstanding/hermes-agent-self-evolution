@@ -1,0 +1,30 @@
+{"phase": "start", "skill": "running-isaac-ros-tests", "model": "openai/google-proxy/gemma-4-31b-it", "auto_mode": "light", "_ts": "2026-04-24T00:52:18.336443Z", "_elapsed": 0.0}
+{"phase": "skill_loaded", "name": "running-isaac-ros-tests", "size": 82352, "_ts": "2026-04-24T00:52:18.342771Z", "_elapsed": 0.01}
+{"phase": "dataset_ready", "train": 15, "val": 3, "holdout": 2, "_ts": "2026-04-24T00:52:18.343867Z", "_elapsed": 0.01}
+{"phase": "constraints_checked", "passed": true, "checks": [{"name": "size_limit", "passed": true}, {"name": "non_empty", "passed": true}, {"name": "skill_structure", "passed": true}], "_ts": "2026-04-24T00:52:18.344622Z", "_elapsed": 0.01}
+{"phase": "optimization_start", "trials_planned": 10, "_ts": "2026-04-24T00:52:18.345484Z", "_elapsed": 0.01}
+{"phase": "trial", "trial": 1, "score": 53.61, "best_score": 53.61, "params": "['Predictor 0: Instruction 1', 'Predictor 0: Few-Shot Set 3'].", "_ts": "2026-04-24T00:52:18.814950Z", "_elapsed": 0.48}
+{"phase": "best_score_update", "best_score": 53.61, "_ts": "2026-04-24T00:52:18.815117Z", "_elapsed": 0.48}
+{"phase": "trial", "trial": 2, "score": 62.22, "best_score": 62.22, "params": "['Predictor 0: Instruction 2', 'Predictor 0: Few-Shot Set 0'].", "_ts": "2026-04-24T00:52:18.827256Z", "_elapsed": 0.49}
+{"phase": "best_score_update", "best_score": 62.22, "_ts": "2026-04-24T00:52:18.827358Z", "_elapsed": 0.49}
+{"phase": "trial", "trial": 3, "score": 58.07, "best_score": 62.22, "params": "['Predictor 0: Instruction 1', 'Predictor 0: Few-Shot Set 5'].", "_ts": "2026-04-24T00:52:18.840498Z", "_elapsed": 0.5}
+{"phase": "best_score_update", "best_score": 62.22, "_ts": "2026-04-24T00:52:18.840668Z", "_elapsed": 0.5}
+{"phase": "trial", "trial": 4, "score": 57.24, "best_score": 62.22, "params": "['Predictor 0: Instruction 2', 'Predictor 0: Few-Shot Set 2'].", "_ts": "2026-04-24T00:52:18.858284Z", "_elapsed": 0.52}
+{"phase": "best_score_update", "best_score": 62.22, "_ts": "2026-04-24T00:52:18.858655Z", "_elapsed": 0.52}
+{"phase": "trial", "trial": 5, "score": 56.22, "best_score": 62.22, "params": "['Predictor 0: Instruction 0', 'Predictor 0: Few-Shot Set 5'].", "_ts": "2026-04-24T00:52:18.870190Z", "_elapsed": 0.53}
+{"phase": "best_score_update", "best_score": 62.22, "_ts": "2026-04-24T00:52:18.870422Z", "_elapsed": 0.53}
+{"phase": "trial", "trial": 6, "score": 62.22, "best_score": 62.22, "params": "['Predictor 0: Instruction 2', 'Predictor 0: Few-Shot Set 0'].", "_ts": "2026-04-24T00:52:18.880781Z", "_elapsed": 0.54}
+{"phase": "best_score_update", "best_score": 62.22, "_ts": "2026-04-24T00:52:18.880939Z", "_elapsed": 0.54}
+{"phase": "trial", "trial": 7, "score": 59.11, "best_score": 62.22, "params": "['Predictor 0: Instruction 2', 'Predictor 0: Few-Shot Set 5'].", "_ts": "2026-04-24T00:52:18.891707Z", "_elapsed": 0.56}
+{"phase": "best_score_update", "best_score": 62.22, "_ts": "2026-04-24T00:52:18.891839Z", "_elapsed": 0.56}
+{"phase": "trial", "trial": 8, "score": 62.49, "best_score": 62.49, "params": "['Predictor 0: Instruction 1', 'Predictor 0: Few-Shot Set 4'].", "_ts": "2026-04-24T00:52:18.904375Z", "_elapsed": 0.57}
+{"phase": "best_score_update", "best_score": 62.49, "_ts": "2026-04-24T00:52:18.904541Z", "_elapsed": 0.57}
+{"phase": "trial", "trial": 9, "score": 59.11, "best_score": 62.49, "params": "['Predictor 0: Instruction 2', 'Predictor 0: Few-Shot Set 5'].", "_ts": "2026-04-24T00:52:18.914494Z", "_elapsed": 0.58}
+{"phase": "best_score_update", "best_score": 62.49, "_ts": "2026-04-24T00:52:18.914598Z", "_elapsed": 0.58}
+{"phase": "trial", "trial": 10, "score": 62.49, "best_score": 62.49, "params": "['Predictor 0: Instruction 1', 'Predictor 0: Few-Shot Set 4'].", "_ts": "2026-04-24T00:52:18.926928Z", "_elapsed": 0.59}
+{"phase": "best_score_update", "best_score": 62.49, "_ts": "2026-04-24T00:52:18.927048Z", "_elapsed": 0.59}
+{"phase": "optimization_complete", "elapsed": 0.5816798210144043, "trials_completed": 10, "best_score": 62.49, "_ts": "2026-04-24T00:52:18.927389Z", "_elapsed": 0.59}
+{"phase": "evolved_constraints", "passed": true, "_ts": "2026-04-24T00:52:18.928743Z", "_elapsed": 0.59}
+{"phase": "holdout", "baseline": 0.5051304347826087, "evolved": 0.5611304347826087, "improvement": 0.05600000000000005, "_ts": "2026-04-24T00:52:18.968106Z", "_elapsed": 0.63}
+{"phase": "saved", "output_dir": "output/running-isaac-ros-tests/20260423_175218", "_ts": "2026-04-24T00:52:18.970329Z", "_elapsed": 0.63}
+{"phase": "complete", "status": "improved", "improvement": 0.05600000000000005, "_ts": "2026-04-24T00:52:18.970811Z", "_elapsed": 0.63}

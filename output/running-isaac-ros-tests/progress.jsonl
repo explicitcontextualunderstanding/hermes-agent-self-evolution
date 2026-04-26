@@ -1,0 +1,2 @@
+{"phase": "start", "skill": "running-isaac-ros-tests", "model": "openai/nvidia-proxy/nvidia/nemotron-3-super-120b-a12b", "auto_mode": "medium", "_ts": "2026-04-26T06:04:14.607835Z", "_elapsed": 0.0}
+{"phase": "skill_loaded", "name": "running-isaac-ros-tests", "size": 82352, "_ts": "2026-04-26T06:04:14.612399Z", "_elapsed": 0.0}

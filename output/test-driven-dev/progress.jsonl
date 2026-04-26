@@ -1,0 +1,5 @@
+{"phase": "start", "skill": "test-driven-dev", "model": "openai/nvidia-proxy/nvidia/nemotron-3-super-120b-a12b", "auto_mode": "heavy", "_ts": "2026-04-26T14:09:07.790288Z", "_elapsed": 0.0}
+{"phase": "skill_loaded", "name": "test-driven-dev", "size": 2005, "_ts": "2026-04-26T14:09:07.800975Z", "_elapsed": 0.01}
+{"phase": "dataset_ready", "train": 9, "val": 4, "holdout": 6, "_ts": "2026-04-26T14:09:07.915025Z", "_elapsed": 0.12}
+{"phase": "constraints_checked", "passed": true, "checks": [{"name": "size_limit", "passed": true}, {"name": "non_empty", "passed": true}, {"name": "skill_structure", "passed": true}], "_ts": "2026-04-26T14:09:07.916083Z", "_elapsed": 0.13}
+{"phase": "optimization_start", "trials_planned": 10, "_ts": "2026-04-26T14:09:07.916985Z", "_elapsed": 0.13}

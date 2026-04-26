@@ -1,0 +1,2 @@
+{"phase": "start", "skill": "applying-karpathy-guidelines", "model": "openai/deepseek-proxy/deepseek-v4", "auto_mode": "heavy", "_ts": "2026-04-26T05:37:47.751654Z", "_elapsed": 0.0}
+{"phase": "skill_loaded", "name": "applying-karpathy-guidelines", "size": 4612, "_ts": "2026-04-26T05:37:47.760817Z", "_elapsed": 0.01}

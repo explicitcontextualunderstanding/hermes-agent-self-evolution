@@ -1,0 +1,8 @@
+{"phase": "start", "skill": "managing-hermes-honcho-containers", "model": "openai/deepseek-proxy/deepseek-v4-flash", "auto_mode": "light", "_ts": "2026-04-26T07:31:19.225593Z", "_elapsed": 0.0}
+{"phase": "skill_loaded", "name": "managing-hermes-honcho-containers", "size": 294171, "_ts": "2026-04-26T07:31:19.231719Z", "_elapsed": 0.01}
+{"phase": "dataset_ready", "train": 10, "val": 5, "holdout": 5, "_ts": "2026-04-26T07:31:58.825583Z", "_elapsed": 39.6}
+{"phase": "constraints_checked", "passed": false, "checks": [{"name": "size_limit", "passed": false}, {"name": "non_empty", "passed": true}, {"name": "skill_structure", "passed": true}], "_ts": "2026-04-26T07:31:58.829394Z", "_elapsed": 39.6}
+{"phase": "optimization_start", "trials_planned": 10, "_ts": "2026-04-26T07:31:58.830577Z", "_elapsed": 39.61}
+{"phase": "optimization_complete", "elapsed": 1517.1194801330566, "trials_completed": 0, "best_score": null, "_ts": "2026-04-26T07:57:15.951951Z", "_elapsed": 1556.73}
+{"phase": "evolved_constraints", "passed": false, "_ts": "2026-04-26T07:57:15.958650Z", "_elapsed": 1556.73}
+{"phase": "failed", "reason": "constraints", "_ts": "2026-04-26T07:57:15.960472Z", "_elapsed": 1556.73}

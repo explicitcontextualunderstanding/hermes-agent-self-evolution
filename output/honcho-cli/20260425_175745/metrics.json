@@ -1,0 +1,17 @@
+{
+  "skill_name": "honcho-cli",
+  "timestamp": "20260425_175745",
+  "iterations": 10,
+  "optimizer_model": "openai/nvidia-proxy/minimaxai/minimax-m2.5",
+  "eval_model": "openai/nvidia-proxy/minimaxai/minimax-m2.5",
+  "baseline_score": 0.455645933014354,
+  "evolved_score": 0.455645933014354,
+  "improvement": 0.0,
+  "baseline_size": 3588,
+  "evolved_size": 3588,
+  "train_examples": 10,
+  "val_examples": 5,
+  "holdout_examples": 5,
+  "elapsed_seconds": 582.5231199264526,
+  "constraints_passed": true
+}

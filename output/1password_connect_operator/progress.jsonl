@@ -1,0 +1,2 @@
+{"phase": "start", "skill": "1password_connect_operator", "model": "openai/nvidia-proxy/nvidia/nemotron-3-super-120b-a12b", "auto_mode": "heavy", "_ts": "2026-04-26T14:13:54.178352Z", "_elapsed": 0.0}
+{"phase": "skill_loaded", "name": "1Password Connect Operator", "size": 17102, "_ts": "2026-04-26T14:13:54.183778Z", "_elapsed": 0.01}

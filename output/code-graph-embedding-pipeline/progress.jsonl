@@ -1,0 +1,10 @@
+{"phase": "start", "skill": "code-graph-embedding-pipeline", "model": "openai/deepseek-proxy/deepseek-v4-flash", "auto_mode": "medium", "_ts": "2026-04-26T06:27:21.566726Z", "_elapsed": 0.0}
+{"phase": "skill_loaded", "name": "code-graph-embedding-pipeline", "size": 12306, "_ts": "2026-04-26T06:27:21.572070Z", "_elapsed": 0.01}
+{"phase": "dataset_ready", "train": 10, "val": 5, "holdout": 5, "_ts": "2026-04-26T06:27:21.641369Z", "_elapsed": 0.07}
+{"phase": "constraints_checked", "passed": true, "checks": [{"name": "size_limit", "passed": true}, {"name": "non_empty", "passed": true}, {"name": "skill_structure", "passed": true}], "_ts": "2026-04-26T06:27:21.642033Z", "_elapsed": 0.08}
+{"phase": "optimization_start", "trials_planned": 10, "_ts": "2026-04-26T06:27:21.642729Z", "_elapsed": 0.08}
+{"phase": "optimization_complete", "elapsed": 1037.3241028785706, "trials_completed": 0, "best_score": null, "_ts": "2026-04-26T06:44:38.989933Z", "_elapsed": 1037.42}
+{"phase": "evolved_constraints", "passed": true, "_ts": "2026-04-26T06:44:39.001846Z", "_elapsed": 1037.44}
+{"phase": "holdout", "baseline": 0.7047055023923445, "evolved": 0.7472274322169058, "improvement": 0.042521929824561266, "_ts": "2026-04-26T06:46:26.384562Z", "_elapsed": 1144.82}
+{"phase": "saved", "output_dir": "output/code-graph-embedding-pipeline/20260425_234626", "_ts": "2026-04-26T06:46:26.395219Z", "_elapsed": 1144.83}
+{"phase": "complete", "status": "improved", "improvement": 0.042521929824561266, "_ts": "2026-04-26T06:46:26.396638Z", "_elapsed": 1144.83}

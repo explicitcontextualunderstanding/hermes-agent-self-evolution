@@ -1,0 +1,10 @@
+{"phase": "start", "skill": "honcho-cli", "model": "openai/google-proxy/gemma-4-31b-it", "auto_mode": "medium", "_ts": "2026-04-24T02:49:27.699426Z", "_elapsed": 0.0}
+{"phase": "skill_loaded", "name": "honcho-cli", "size": 3588, "_ts": "2026-04-24T02:49:27.704941Z", "_elapsed": 0.01}
+{"phase": "start", "skill": "honcho-cli", "model": "openai/google-proxy/gemma-4-26b-a4b-it", "auto_mode": "medium", "_ts": "2026-04-24T03:20:16.328195Z", "_elapsed": 0.0}
+{"phase": "skill_loaded", "name": "honcho-cli", "size": 3588, "_ts": "2026-04-24T03:20:16.339856Z", "_elapsed": 0.01}
+{"phase": "dataset_ready", "train": 10, "val": 5, "holdout": 5, "_ts": "2026-04-24T03:20:59.802258Z", "_elapsed": 43.47}
+{"phase": "constraints_checked", "passed": true, "checks": [{"name": "size_limit", "passed": true}, {"name": "non_empty", "passed": true}, {"name": "skill_structure", "passed": true}], "_ts": "2026-04-24T03:20:59.803487Z", "_elapsed": 43.48}
+{"phase": "optimization_start", "trials_planned": 10, "_ts": "2026-04-24T03:20:59.804502Z", "_elapsed": 43.48}
+{"phase": "optimization_complete", "elapsed": 2.0444867610931396, "trials_completed": 0, "best_score": null, "_ts": "2026-04-24T03:21:01.850637Z", "_elapsed": 45.52}
+{"phase": "evolved_constraints", "passed": true, "_ts": "2026-04-24T03:21:01.853401Z", "_elapsed": 45.53}
+{"phase": "holdout", "baseline": 0.5893333333333333, "evolved": 0.5893333333333333, "improvement": 0.0, "_ts": "2026-04-24T03:22:07.331150Z", "_elapsed": 111.0}

@@ -1,0 +1,2 @@
+{"phase": "start", "skill": "honcho-cli", "model": "openai/deepseek-proxy/deepseek-v4", "auto_mode": "heavy", "_ts": "2026-04-26T05:37:48.902855Z", "_elapsed": 0.0}
+{"phase": "skill_loaded", "name": "honcho-cli", "size": 3588, "_ts": "2026-04-26T05:37:48.908840Z", "_elapsed": 0.01}

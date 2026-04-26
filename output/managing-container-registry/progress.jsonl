@@ -1,0 +1,5 @@
+{"phase": "start", "skill": "managing-container-registry", "model": "openai/deepseek-proxy/deepseek-v4-flash", "auto_mode": "medium", "_ts": "2026-04-26T07:17:21.774288Z", "_elapsed": 0.0}
+{"phase": "skill_loaded", "name": "managing-container-registry", "size": 59725, "_ts": "2026-04-26T07:17:21.781386Z", "_elapsed": 0.01}
+{"phase": "dataset_ready", "train": 10, "val": 5, "holdout": 5, "_ts": "2026-04-26T07:17:58.572148Z", "_elapsed": 36.8}
+{"phase": "constraints_checked", "passed": true, "checks": [{"name": "size_limit", "passed": true}, {"name": "non_empty", "passed": true}, {"name": "skill_structure", "passed": true}], "_ts": "2026-04-26T07:17:58.573176Z", "_elapsed": 36.8}
+{"phase": "optimization_start", "trials_planned": 10, "_ts": "2026-04-26T07:17:58.574044Z", "_elapsed": 36.8}

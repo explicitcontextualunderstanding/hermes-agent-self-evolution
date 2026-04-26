@@ -1,0 +1,5 @@
+{"phase": "start", "skill": "vslam-debugging", "model": "openai/deepseek-proxy/deepseek-v4-flash", "auto_mode": "heavy", "_ts": "2026-04-26T14:18:36.051378Z", "_elapsed": 0.0}
+{"phase": "start", "skill": "vslam-debugging", "model": "openai/deepseek-proxy/deepseek-v4-flash", "auto_mode": "heavy", "_ts": "2026-04-26T14:18:36.051352Z", "_elapsed": 0.0}
+{"phase": "skill_loaded", "name": "vslam-debugging", "size": 20061, "_ts": "2026-04-26T14:18:36.057052Z", "_elapsed": 0.01}
+{"phase": "skill_loaded", "name": "vslam-debugging", "size": 20061, "_ts": "2026-04-26T14:18:36.057060Z", "_elapsed": 0.01}
+{"phase": "dataset_ready", "train": 10, "val": 5, "holdout": 5, "_ts": "2026-04-26T14:19:14.404147Z", "_elapsed": 38.35}

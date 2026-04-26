@@ -1,0 +1,28 @@
+{"phase": "start", "skill": "1password_connect_operator", "model": "openai/nvidia-proxy/minimaxai/minimax-m2.5", "auto_mode": "light", "_ts": "2026-04-26T04:13:50.641061Z", "_elapsed": 0.0}
+{"phase": "skill_loaded", "name": "1Password Connect Operator", "size": 17102, "_ts": "2026-04-26T04:13:50.645978Z", "_elapsed": 0.0}
+{"phase": "dataset_ready", "train": 10, "val": 5, "holdout": 5, "_ts": "2026-04-26T04:13:50.712363Z", "_elapsed": 0.07}
+{"phase": "constraints_checked", "passed": true, "checks": [{"name": "size_limit", "passed": true}, {"name": "non_empty", "passed": true}, {"name": "skill_structure", "passed": true}], "_ts": "2026-04-26T04:13:50.713056Z", "_elapsed": 0.07}
+{"phase": "optimization_start", "trials_planned": 10, "_ts": "2026-04-26T04:13:50.713791Z", "_elapsed": 0.07}
+{"phase": "trial", "trial": 1, "score": 70.47, "best_score": 70.47, "params": "['Predictor 0: Instruction 1', 'Predictor 0: Few-Shot Set 3'].", "_ts": "2026-04-26T04:18:36.537366Z", "_elapsed": 285.9}
+{"phase": "best_score_update", "best_score": 70.47, "_ts": "2026-04-26T04:18:36.542633Z", "_elapsed": 285.9}
+{"phase": "trial", "trial": 2, "score": 79.17, "best_score": 79.17, "params": "['Predictor 0: Instruction 2', 'Predictor 0: Few-Shot Set 0'].", "_ts": "2026-04-26T04:19:56.908665Z", "_elapsed": 366.27}
+{"phase": "best_score_update", "best_score": 79.17, "_ts": "2026-04-26T04:19:56.909184Z", "_elapsed": 366.27}
+{"phase": "trial", "trial": 3, "score": 73.1, "best_score": 79.17, "params": "['Predictor 0: Instruction 1', 'Predictor 0: Few-Shot Set 5'].", "_ts": "2026-04-26T04:20:27.721661Z", "_elapsed": 397.08}
+{"phase": "best_score_update", "best_score": 79.17, "_ts": "2026-04-26T04:20:27.722156Z", "_elapsed": 397.08}
+{"phase": "trial", "trial": 4, "score": 75.43, "best_score": 79.17, "params": "['Predictor 0: Instruction 2', 'Predictor 0: Few-Shot Set 2'].", "_ts": "2026-04-26T04:21:04.588427Z", "_elapsed": 433.95}
+{"phase": "best_score_update", "best_score": 79.17, "_ts": "2026-04-26T04:21:04.589311Z", "_elapsed": 433.95}
+{"phase": "trial", "trial": 5, "score": 70.9, "best_score": 79.17, "params": "['Predictor 0: Instruction 0', 'Predictor 0: Few-Shot Set 5'].", "_ts": "2026-04-26T04:22:15.416601Z", "_elapsed": 504.78}
+{"phase": "best_score_update", "best_score": 79.17, "_ts": "2026-04-26T04:22:15.417486Z", "_elapsed": 504.78}
+{"phase": "trial", "trial": 6, "score": 79.17, "best_score": 79.17, "params": "['Predictor 0: Instruction 2', 'Predictor 0: Few-Shot Set 0'].", "_ts": "2026-04-26T04:22:15.434279Z", "_elapsed": 504.79}
+{"phase": "best_score_update", "best_score": 79.17, "_ts": "2026-04-26T04:22:15.434571Z", "_elapsed": 504.79}
+{"phase": "trial", "trial": 7, "score": 73.43, "best_score": 79.17, "params": "['Predictor 0: Instruction 2', 'Predictor 0: Few-Shot Set 5'].", "_ts": "2026-04-26T04:22:59.237784Z", "_elapsed": 548.6}
+{"phase": "best_score_update", "best_score": 79.17, "_ts": "2026-04-26T04:22:59.238256Z", "_elapsed": 548.6}
+{"phase": "trial", "trial": 8, "score": 73.1, "best_score": 79.17, "params": "['Predictor 0: Instruction 1', 'Predictor 0: Few-Shot Set 4'].", "_ts": "2026-04-26T04:24:13.324455Z", "_elapsed": 622.68}
+{"phase": "best_score_update", "best_score": 79.17, "_ts": "2026-04-26T04:24:13.324836Z", "_elapsed": 622.68}
+{"phase": "trial", "trial": 9, "score": 73.43, "best_score": 79.17, "params": "['Predictor 0: Instruction 2', 'Predictor 0: Few-Shot Set 5'].", "_ts": "2026-04-26T04:24:13.341342Z", "_elapsed": 622.7}
+{"phase": "best_score_update", "best_score": 79.17, "_ts": "2026-04-26T04:24:13.341546Z", "_elapsed": 622.7}
+{"phase": "trial", "trial": 10, "score": 67.47, "best_score": 79.17, "params": "['Predictor 0: Instruction 2', 'Predictor 0: Few-Shot Set 3'].", "_ts": "2026-04-26T04:26:24.724490Z", "_elapsed": 754.08}
+{"phase": "best_score_update", "best_score": 79.17, "_ts": "2026-04-26T04:26:24.727948Z", "_elapsed": 754.09}
+{"phase": "optimization_complete", "elapsed": 754.0386097431183, "trials_completed": 10, "best_score": 79.17, "_ts": "2026-04-26T04:26:24.806269Z", "_elapsed": 754.17}
+{"phase": "evolved_constraints", "passed": true, "_ts": "2026-04-26T04:26:24.815804Z", "_elapsed": 754.17}
+{"phase": "holdout", "baseline": 0.6754333333333333, "evolved": 0.7323941176470588, "improvement": 0.05696078431372542, "_ts": "2026-04-26T04:38:08.589979Z", "_elapsed": 1457.95}

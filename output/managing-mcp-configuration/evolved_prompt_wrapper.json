@@ -1,0 +1,26 @@
+{
+  "signature_doc": "Complete a task following the provided skill instructions.\n\nYou are an AI agent following specific skill instructions to complete a task.\nRead the skill instructions carefully and follow the procedure described.",
+  "signature_instructions": "Complete a task following the provided skill instructions.\n\nYou are an AI agent following specific skill instructions to complete a task.\nRead the skill instructions carefully and follow the procedure described.",
+  "demos": [
+    {
+      "skill_instructions": "\n\n# === SKILL.md ===\n\n---\nname: managing-mcp-configuration\ndescription: Configure and maintain MCP LSP servers and tool servers across macOS, Jetson, and Hermes.\nskill: managing-mcp-configuration\nprof...",
+      "task_input": "I want to use `swift_diagnostics` to find errors in my Swift file. Is it reliable?...",
+      "output": "The `swift_diagnostics` tool (provided by the `sourcekit-lsp-mcp` server) is useful for quick investigation, but it is **not authoritative**. \n\nWhile it is very fast (returning cached errors in < 1s),..."
+    },
+    {
+      "skill_instructions": "\n\n# === SKILL.md ===\n\n---\nname: managing-mcp-configuration\ndescription: Configure and maintain MCP LSP servers and tool servers across macOS, Jetson, and Hermes.\nskill: managing-mcp-configuration\nprof...",
+      "task_input": "I'm on my Jetson Orin Nano. I added a new Python LSP config to `kilo.jsonc`, but `kilo mcp list` doesn't show it. Why?...",
+      "output": "Based on the `managing-mcp-configuration` skill documentation, the reason your new Python LSP config isn't showing up is due to a platform-specific configuration behavior on Jetson.\n\n### The Root Caus..."
+    },
+    {
+      "skill_instructions": "\n\n# === SKILL.md ===\n\n---\nname: managing-mcp-configuration\ndescription: Configure and maintain MCP LSP servers and tool servers across macOS, Jetson, and Hermes.\nskill: managing-mcp-configuration\nprof...",
+      "task_input": "I added a new MCP server to my project's `.mcp.json` file in Claude Code, but when I run `claude mcp list`, it's not there. I've checked the file and it looks perfect....",
+      "output": "It sounds like you have encountered **Trap 12: Claude Code MCP Server Silently Not Appearing**. \n\nEven if your `.mcp.json` file is syntactically perfect, Claude Code requires you to explicitly \"trust\"..."
+    },
+    {
+      "skill_instructions": "\n\n# === SKILL.md ===\n\n---\nname: managing-mcp-configuration\ndescription: Configure and maintain MCP LSP servers and tool servers across macOS, Jetson, and Hermes.\nskill: managing-mcp-configuration\nprof...",
+      "task_input": "I'm on Jetson and I need to update my MCP configurations. Should I edit `kilo.jsonc`?...",
+      "output": "No, you should **not** edit `kilo.jsonc` to update MCP configurations on a Jetson. \n\nOn Jetson, the `mcp` section within `kilo.jsonc` (or `kilo.nano.jsonc`) is **ignored**. Kilo on Linux reads MCP ser..."
+    }
+  ]
+}

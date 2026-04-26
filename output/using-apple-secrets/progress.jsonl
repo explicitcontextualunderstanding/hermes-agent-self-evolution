@@ -1,0 +1,2 @@
+{"phase": "start", "skill": "using-apple-secrets", "model": "openai/nvidia-proxy/nvidia/nemotron-3-super-120b-a12b", "auto_mode": "medium", "_ts": "2026-04-26T07:25:11.672333Z", "_elapsed": 0.0}
+{"phase": "skill_loaded", "name": "using-apple-secrets", "size": 49305, "_ts": "2026-04-26T07:25:11.677994Z", "_elapsed": 0.01}

@@ -1,0 +1,17 @@
+{
+  "skill_name": "telemetry-pipeline-health",
+  "timestamp": "20260425_212350",
+  "iterations": 10,
+  "optimizer_model": "openai/nvidia-proxy/minimaxai/minimax-m2.5",
+  "eval_model": "openai/nvidia-proxy/minimaxai/minimax-m2.5",
+  "baseline_score": 0.4648148592370481,
+  "evolved_score": 0.5829777111444278,
+  "improvement": 0.11816285190737968,
+  "baseline_size": 4751,
+  "evolved_size": 4751,
+  "train_examples": 10,
+  "val_examples": 5,
+  "holdout_examples": 5,
+  "elapsed_seconds": 658.3159339427948,
+  "constraints_passed": true
+}

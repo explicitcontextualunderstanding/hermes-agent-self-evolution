@@ -1004,7 +1004,7 @@
     var errorCount = summary ? summary.failed : 0;
 
     return React.createElement("div", {
-      className: cn("flex flex-col gap-5", isRunning && "ev-shimmer"),
+      className: cn("evo-ambient-glow flex flex-col gap-5", isRunning && "ev-shimmer"),
     },
 
       // ── Sub-navigation tabs ──
@@ -1037,7 +1037,7 @@
 
       // ── Batch Complete Banner ──
       batchComplete && React.createElement(Card, {
-        className: "border border-success/40 bg-success/5 ev-celebrate",
+        className: "card-notched border border-success/40 bg-success/5 ev-celebrate",
       },
         React.createElement(CardContent, { className: "flex items-center gap-3 py-3" },
           React.createElement("span", { className: "text-2xl" }, "\u2714\uFE0F"),
@@ -1054,7 +1054,7 @@
 
       // ── 3 Status Cards ──
       React.createElement("div", { className: "grid grid-cols-3 gap-4" },
-        React.createElement(Card, null,
+        React.createElement(Card, { className: "card-notched" },
           React.createElement(CardHeader, { className: "pb-2 flex flex-row items-center justify-between" },
             React.createElement(CardTitle, { className: "text-xs font-medium text-muted-foreground uppercase tracking-wider" }, "Batch Status"),
             isRunning && React.createElement(Badge, {
@@ -1097,7 +1097,7 @@
             ),
           ),
         ),
-        React.createElement(Card, null,
+        React.createElement(Card, { className: "card-notched" },
           React.createElement(CardHeader, { className: "pb-2" },
             React.createElement(CardTitle, { className: "text-xs font-medium text-muted-foreground uppercase tracking-wider" }, "Skills Progress"),
           ),
@@ -1124,7 +1124,7 @@
             }),
           ),
         ),
-        React.createElement(Card, null,
+        React.createElement(Card, { className: "card-notched" },
           React.createElement(CardHeader, { className: "pb-2" },
             React.createElement(CardTitle, { className: "text-xs font-medium text-muted-foreground uppercase tracking-wider" }, "Last Heartbeat"),
           ),
@@ -1149,7 +1149,7 @@
       ),
 
       // ── Queue Table ──
-      React.createElement(Card, null,
+      React.createElement(Card, { className: "card-notched" },
         React.createElement(CardHeader, { className: "pb-2 flex flex-row items-center justify-between" },
           React.createElement("div", null,
             React.createElement(CardTitle, { className: "text-sm font-medium" }, "Evolution Queue"),
@@ -1228,7 +1228,7 @@
       ),
 
       // ── Log Viewer ──
-      React.createElement(Card, null,
+      React.createElement(Card, { className: "card-notched" },
         React.createElement(CardHeader, { className: "pb-2 flex flex-row items-center justify-between" },
           React.createElement(CardTitle, { className: "text-sm font-medium" }, "Batch Log"),
           React.createElement("div", { className: "flex items-center gap-2" },
@@ -1257,7 +1257,7 @@
       ), // end Fragment (queue view)
 
       // ── Topology View ──
-      view === "topology" && React.createElement(Card, null,
+      view === "topology" && React.createElement(Card, { className: "card-notched" },
         React.createElement(CardHeader, { className: "pb-2" },
           React.createElement(CardTitle, { className: "text-sm font-medium" }, "Pipeline Topology"),
           React.createElement("span", { className: "text-xs text-muted-foreground mt-1 block" },

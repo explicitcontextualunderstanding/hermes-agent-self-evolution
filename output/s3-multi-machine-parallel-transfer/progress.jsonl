@@ -1,0 +1,5 @@
+{"phase": "start", "skill": "s3-multi-machine-parallel-transfer", "model": "openai/deepseek-proxy/deepseek-v4-flash", "auto_mode": "heavy", "_ts": "2026-04-26T14:16:07.482416Z", "_elapsed": 0.0}
+{"phase": "skill_loaded", "name": "s3-multi-machine-parallel-transfer", "size": 8243, "_ts": "2026-04-26T14:16:07.489416Z", "_elapsed": 0.01}
+{"phase": "dataset_ready", "train": 1, "val": 1, "holdout": 0, "_ts": "2026-04-26T14:17:17.762980Z", "_elapsed": 70.28}
+{"phase": "constraints_checked", "passed": true, "checks": [{"name": "size_limit", "passed": true}, {"name": "non_empty", "passed": true}, {"name": "skill_structure", "passed": true}], "_ts": "2026-04-26T14:17:17.775835Z", "_elapsed": 70.29}
+{"phase": "optimization_start", "trials_planned": 10, "_ts": "2026-04-26T14:17:17.793395Z", "_elapsed": 70.31}

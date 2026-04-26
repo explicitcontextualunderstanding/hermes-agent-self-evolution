@@ -1,0 +1,26 @@
+{
+  "signature_doc": "You are troubleshooting a critical failure in the telemetry pipeline health diagnostic script. The script `~/workspace/nano2/scripts/telemetry-pipeline-health.sh` is failing in production with multiple errors during a high-stakes deployment where Jetsons need to send telemetry data to the database immediately.\n\n**The critical issues you must fix:**\n\n1. **bash 3.2 Compatibility Failure**: The script uses associative arrays (`declare -A`) which are not available in bash 3.2 on macOS. This causes the script to crash when checking LaunchAgents. Rewrite using parallel arrays.\n\n2. **Container IP Extraction Broken**: Docker output format changed and the script now grabs wrong columns (sometimes getting \"arm64\" or empty strings instead of the IP). Fix this using regex-based extraction or `docker inspect`.\n\n3. **Empty Array Crash**: Under `set -u`, the script crashes with \"unbound variable\" when printing the `ISSUES` array. Fix this using the proper parameter expansion syntax.\n\n4. **Interval Task False Positives**: The script incorrectly flags the watchdog LaunchAgent as failed because it doesn't have a PID (it's an interval task). Fix the logic to distinguish between daemons and interval tasks.\n\n**Your mission**: Examine the script at `~/workspace/nano2/scripts/telemetry-pipeline-health.sh`, identify all four failure points, and provide corrected code snippets that fix each issue while maintaining bash 3.2 compatibility. The deployment depends on this working correctly within the hour!",
+  "signature_instructions": "You are troubleshooting a critical failure in the telemetry pipeline health diagnostic script. The script `~/workspace/nano2/scripts/telemetry-pipeline-health.sh` is failing in production with multiple errors during a high-stakes deployment where Jetsons need to send telemetry data to the database immediately.\n\n**The critical issues you must fix:**\n\n1. **bash 3.2 Compatibility Failure**: The script uses associative arrays (`declare -A`) which are not available in bash 3.2 on macOS. This causes the script to crash when checking LaunchAgents. Rewrite using parallel arrays.\n\n2. **Container IP Extraction Broken**: Docker output format changed and the script now grabs wrong columns (sometimes getting \"arm64\" or empty strings instead of the IP). Fix this using regex-based extraction or `docker inspect`.\n\n3. **Empty Array Crash**: Under `set -u`, the script crashes with \"unbound variable\" when printing the `ISSUES` array. Fix this using the proper parameter expansion syntax.\n\n4. **Interval Task False Positives**: The script incorrectly flags the watchdog LaunchAgent as failed because it doesn't have a PID (it's an interval task). Fix the logic to distinguish between daemons and interval tasks.\n\n**Your mission**: Examine the script at `~/workspace/nano2/scripts/telemetry-pipeline-health.sh`, identify all four failure points, and provide corrected code snippets that fix each issue while maintaining bash 3.2 compatibility. The deployment depends on this working correctly within the hour!",
+  "demos": [
+    {
+      "skill_instructions": "\n\n# === SKILL.md ===\n\n---\nname: telemetry-pipeline-health\ndescription: Unified diagnostic for the kilo-proxy \u2192 ingester \u2192 DB telemetry pipeline on macOS\n---\n\n# Telemetry Pipeline Health Diagnostic\n\n##...",
+      "task_input": "Ingester log contains recent errors (connection failures, parse errors)...",
+      "output": "```bash\n#!/bin/bash\n# Run telemetry pipeline health diagnostic\n\nscript_path=\"~/workspace/nano2/scripts/telemetry-pipeline-health.sh\"\n\nif [ -f \"$script_path\" ]; then\n    bash \"$script_path\"\nelse\n    ec..."
+    },
+    {
+      "skill_instructions": "\n\n# === SKILL.md ===\n\n---\nname: telemetry-pipeline-health\ndescription: Unified diagnostic for the kilo-proxy \u2192 ingester \u2192 DB telemetry pipeline on macOS\n---\n\n# Telemetry Pipeline Health Diagnostic\n\n##...",
+      "task_input": "Ingester .ingester_db_url contains forbidden IP 127.0.0.1...",
+      "output": "# Telemetry Pipeline Health Diagnostic\n\n## Critical Issue Detected\n\n**Section: Ingester Configuration**\n- **Severity:** CRITICAL\n- **Issue:** `.ingester_db_url` contains forbidden IP `127.0.0.1`\n- **F..."
+    },
+    {
+      "skill_instructions": "\n\n# === SKILL.md ===\n\n---\nname: telemetry-pipeline-health\ndescription: Unified diagnostic for the kilo-proxy \u2192 ingester \u2192 DB telemetry pipeline on macOS\n---\n\n# Telemetry Pipeline Health Diagnostic\n\n##...",
+      "task_input": "Empty ISUES array with set -u enabled...",
+      "output": "When `set -u` (nounset) is enabled in bash, attempting to expand an empty array using the standard `${ARRAY[@]:-}` syntax will cause an \"unbound variable\" error. This is because `:-` only works for in..."
+    },
+    {
+      "skill_instructions": "...",
+      "task_input": "Full pipeline healthy - verify exit code 0...",
+      "output": "..."
+    }
+  ]
+}

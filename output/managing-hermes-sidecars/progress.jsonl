@@ -1,0 +1,10 @@
+{"phase": "start", "skill": "managing-hermes-sidecars", "model": "openai/deepseek-proxy/deepseek-v4-flash", "auto_mode": "medium", "_ts": "2026-04-26T07:08:40.149184Z", "_elapsed": 0.0}
+{"phase": "skill_loaded", "name": "managing-hermes-sidecars", "size": 58912, "_ts": "2026-04-26T07:08:40.154332Z", "_elapsed": 0.01}
+{"phase": "dataset_ready", "train": 1, "val": 1, "holdout": 0, "_ts": "2026-04-26T07:10:19.806916Z", "_elapsed": 99.66}
+{"phase": "constraints_checked", "passed": true, "checks": [{"name": "size_limit", "passed": true}, {"name": "non_empty", "passed": true}, {"name": "skill_structure", "passed": true}], "_ts": "2026-04-26T07:10:19.808504Z", "_elapsed": 99.66}
+{"phase": "optimization_start", "trials_planned": 10, "_ts": "2026-04-26T07:10:19.809514Z", "_elapsed": 99.66}
+{"phase": "optimization_complete", "elapsed": 98.3917670249939, "trials_completed": 0, "best_score": null, "_ts": "2026-04-26T07:11:58.202344Z", "_elapsed": 198.05}
+{"phase": "evolved_constraints", "passed": true, "_ts": "2026-04-26T07:11:58.205458Z", "_elapsed": 198.06}
+{"phase": "holdout", "baseline": 0.0, "evolved": 0.0, "improvement": 0.0, "_ts": "2026-04-26T07:11:58.206099Z", "_elapsed": 198.06}
+{"phase": "saved", "output_dir": "output/managing-hermes-sidecars/20260426_001158", "_ts": "2026-04-26T07:11:58.213963Z", "_elapsed": 198.06}
+{"phase": "complete", "status": "no_improvement", "improvement": 0.0, "_ts": "2026-04-26T07:11:58.214412Z", "_elapsed": 198.07}

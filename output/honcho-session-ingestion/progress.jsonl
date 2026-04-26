@@ -1,0 +1,10 @@
+{"phase": "start", "skill": "honcho-session-ingestion", "model": "openai/nvidia-proxy/nvidia/nemotron-3-super-120b-a12b", "auto_mode": "medium", "_ts": "2026-04-26T06:47:39.252109Z", "_elapsed": 0.0}
+{"phase": "skill_loaded", "name": "honcho-session-ingestion", "size": 44636, "_ts": "2026-04-26T06:47:39.262096Z", "_elapsed": 0.01}
+{"phase": "optimization_complete", "elapsed": 1553.0330991744995, "trials_completed": 0, "best_score": null, "_ts": "2026-04-26T06:49:05.189109Z", "_elapsed": 1606.27}
+{"phase": "evolved_constraints", "passed": true, "_ts": "2026-04-26T06:49:05.198105Z", "_elapsed": 1606.28}
+{"phase": "holdout", "baseline": 0.6357378974900196, "evolved": 0.714206570917267, "improvement": 0.07846867342724739, "_ts": "2026-04-26T06:52:05.105447Z", "_elapsed": 1786.18}
+{"phase": "saved", "output_dir": "output/honcho-session-ingestion/20260425_235205", "_ts": "2026-04-26T06:52:05.118320Z", "_elapsed": 1786.2}
+{"phase": "complete", "status": "improved", "improvement": 0.07846867342724739, "_ts": "2026-04-26T06:52:05.120725Z", "_elapsed": 1786.2}
+{"phase": "dataset_ready", "train": 0, "val": 0, "holdout": 0, "_ts": "2026-04-26T06:59:49.814854Z", "_elapsed": 730.56}
+{"phase": "constraints_checked", "passed": true, "checks": [{"name": "size_limit", "passed": true}, {"name": "non_empty", "passed": true}, {"name": "skill_structure", "passed": true}], "_ts": "2026-04-26T06:59:49.816830Z", "_elapsed": 730.56}
+{"phase": "optimization_start", "trials_planned": 10, "_ts": "2026-04-26T06:59:49.818764Z", "_elapsed": 730.57}

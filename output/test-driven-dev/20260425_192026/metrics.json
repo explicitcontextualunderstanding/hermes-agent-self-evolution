@@ -1,0 +1,17 @@
+{
+  "skill_name": "test-driven-dev",
+  "timestamp": "20260425_192026",
+  "iterations": 10,
+  "optimizer_model": "openai/nvidia-proxy/nvidia/nemotron-3-super-120b-a12b",
+  "eval_model": "openai/nvidia-proxy/nvidia/nemotron-3-super-120b-a12b",
+  "baseline_score": 0.675003259491907,
+  "evolved_score": 0.6778134807253763,
+  "improvement": 0.002810221233469301,
+  "baseline_size": 2005,
+  "evolved_size": 2005,
+  "train_examples": 9,
+  "val_examples": 4,
+  "holdout_examples": 6,
+  "elapsed_seconds": 644.7818880081177,
+  "constraints_passed": true
+}

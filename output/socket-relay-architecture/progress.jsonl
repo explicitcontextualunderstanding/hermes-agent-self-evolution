@@ -1,0 +1,5 @@
+{"phase": "start", "skill": "socket-relay-architecture", "model": "openai/deepseek-proxy/deepseek-v4-flash", "auto_mode": "heavy", "_ts": "2026-04-26T14:15:06.460368Z", "_elapsed": 0.0}
+{"phase": "skill_loaded", "name": "", "size": 5738, "_ts": "2026-04-26T14:15:06.464242Z", "_elapsed": 0.0}
+{"phase": "dataset_ready", "train": 10, "val": 5, "holdout": 5, "_ts": "2026-04-26T14:15:43.432687Z", "_elapsed": 36.97}
+{"phase": "constraints_checked", "passed": true, "checks": [{"name": "size_limit", "passed": true}, {"name": "non_empty", "passed": true}, {"name": "skill_structure", "passed": true}], "_ts": "2026-04-26T14:15:43.434487Z", "_elapsed": 36.97}
+{"phase": "optimization_start", "trials_planned": 10, "_ts": "2026-04-26T14:15:43.435679Z", "_elapsed": 36.98}
