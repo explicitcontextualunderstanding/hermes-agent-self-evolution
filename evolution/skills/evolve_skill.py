@@ -127,6 +127,7 @@ def evolve(
     num_threads: int = 5,
     auto_mode: Optional[str] = None,
     progress_file: Optional[str] = None,
+    eval_examples: Optional[int] = None,
 ):
     """Main evolution function — orchestrates the full optimization loop."""
 
@@ -265,6 +266,17 @@ def evolve(
     trainset = dataset.to_dspy_examples("train", skill_text=skill_body)
     valset = dataset.to_dspy_examples("val", skill_text=skill_body)
 
+    # ── Mitigation: limit training examples seen by GEPA ────────────────
+    # The inner loop calls SkillModule.forward() for every (candidate × example).
+    # Reducing eval_examples directly cuts the n² term.
+    # Full valset is still used for scoring — only training is truncated.
+    if eval_examples and eval_examples < len(trainset):
+        console.print(f"  [yellow]Eval examples limited: {len(trainset)} → {eval_examples} (mitigate n² explosion)[/yellow]")
+        trainset = trainset[:eval_examples]
+    else:
+        eval_examples = len(trainset)
+    console.print(f"  Training set: {len(trainset)} examples, Validation set: {len(valset)} examples")
+
     # ── 5. Run GEPA optimization ────────────────────────────────────────
     console.print(f"\n[bold cyan]Running GEPA optimization ({iterations} iterations)...[/bold cyan]\n")
 
@@ -287,8 +299,22 @@ def evolve(
 
         def __call__(self, *args, **kwargs):
             _reflection_call_count[0] += 1
-            # Rough input length from kwargs
-            input_chars = sum(len(str(v)) for v in kwargs.values()) if kwargs else 0
+            # Extract message content for accurate char counting
+            # DSPy calls lm(messages=[{role, content}, ...], **lm_kwargs)
+            input_chars = 0
+            messages = kwargs.get("messages")
+            if messages and isinstance(messages, list):
+                for m in messages:
+                    content = m.get("content", "") if isinstance(m, dict) else str(m)
+                    input_chars += len(content)
+            elif messages:
+                input_chars = len(str(messages))
+            else:
+                prompt = kwargs.get("prompt")
+                if prompt:
+                    input_chars = len(str(prompt))
+                elif args:
+                    input_chars = sum(len(str(a)) for a in args)
             LM_TRACKER.record(
                 site="gepa_reflection",
                 model=str(getattr(self._lm, "model", "")),
@@ -316,7 +342,7 @@ def evolve(
 
         console.print(f"  [dim]GEPA reflection LM: {eval_model} (tracked)[/dim]")
         console.print(f"  [dim]Training set: {len(trainset)} examples, Validation set: {len(valset)} examples[/dim]")
-        console.print(f"  [dim]Expected minimum: {iterations} iterations × ~10 candidates × {len(trainset)} eval examples = ~{iterations * 10 * len(trainset)} forward calls[/dim]")
+        console.print(f"  [dim]Expected minimum: {iterations} iterations × ~10 candidates × {len(trainset)} eval examples = ~{iterations * 10 * len(trainset)} forward calls (eval_examples={eval_examples})[/dim]")
 
         optimized_module = optimizer.compile(
             baseline_module,
@@ -537,7 +563,8 @@ def evolve(
 @click.option("--auto", "auto_mode", default=None, type=click.Choice(["light", "medium", "heavy"]), help="MIPROv2 auto mode (overrides num_trials/num_candidates)")
 @click.option("--skill-path", default=None, help="Direct path to SKILL.md (bypasses repo search)")
 @click.option("--progress-file", default=None, help="Path to JSONL progress checkpoint file")
-def main(skill, iterations, eval_source, dataset_path, optimizer_model, eval_model, hermes_repo, run_tests, dry_run, num_trials, num_candidates, num_threads, auto_mode, skill_path, progress_file):
+@click.option("--eval-examples", default=None, type=int, help="Limit training examples for GEPA (default: all, recommend 1-5 to mitigate n² explosion)")
+def main(skill, iterations, eval_source, dataset_path, optimizer_model, eval_model, hermes_repo, run_tests, dry_run, num_trials, num_candidates, num_threads, auto_mode, skill_path, progress_file, eval_examples):
     """Evolve a Hermes Agent skill using DSPy + GEPA optimization."""
     evolve(
         skill_name=skill,
@@ -555,6 +582,7 @@ def main(skill, iterations, eval_source, dataset_path, optimizer_model, eval_mod
         num_threads=num_threads,
         auto_mode=auto_mode,
         progress_file=progress_file,
+        eval_examples=eval_examples,
     )
 
 

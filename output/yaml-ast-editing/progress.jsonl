@@ -1,2 +1,2 @@
-{"phase": "start", "skill": "yaml-ast-editing", "model": "openai/deepseek-proxy/deepseek-v4-flash", "auto_mode": "medium", "_ts": "2026-04-26T06:03:16.914005Z", "_elapsed": 0.0}
-{"phase": "skill_loaded", "name": "", "size": 10916, "_ts": "2026-04-26T06:03:16.918075Z", "_elapsed": 0.0}
+{"phase": "start", "skill": "yaml-ast-editing", "model": "openai/nvidia-proxy/nvidia/nemotron-3-super-120b-a12b", "auto_mode": "light", "_ts": "2026-04-26T21:32:58.472083Z", "_elapsed": 0.0}
+{"phase": "skill_loaded", "name": "", "size": 10916, "_ts": "2026-04-26T21:32:58.476294Z", "_elapsed": 0.0}
