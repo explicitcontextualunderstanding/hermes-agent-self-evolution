@@ -1536,5 +1536,4 @@
 
   window.__HERMES_PLUGINS__.register("evolution-hub", EvolutionHubPage);
   window.__HERMES_PLUGINS__.registerSlot("evolution-hub", "sidebar", SidebarControls);
-  window.__HERMES_PLUGINS__.registerSlot("evolution-hub", "header-banner", HeaderBannerContent);
 })();
