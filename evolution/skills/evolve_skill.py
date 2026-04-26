@@ -248,13 +248,14 @@ def evolve(
     try:
         optimizer = dspy.GEPA(
             metric=skill_fitness_metric,
-            max_steps=iterations,
+            max_full_evals=iterations,
         )
 
         optimized_module = optimizer.compile(
             baseline_module,
             trainset=trainset,
             valset=valset,
+            requires_permission_to_run=False,
         )
     except Exception as e:
         # Fall back to MIPROv2 if GEPA isn't available in this DSPy version
@@ -268,6 +269,7 @@ def evolve(
                 baseline_module,
                 trainset=trainset,
                 valset=valset,
+                requires_permission_to_run=False,
             )
         else:
             optimizer = dspy.MIPROv2(
@@ -282,6 +284,7 @@ def evolve(
                 valset=valset,
                 num_trials=num_trials,
                 minibatch=False,
+                requires_permission_to_run=False,
             )
 
     elapsed = time.time() - start_time
@@ -292,6 +295,28 @@ def evolve(
     # The optimized module's instructions contain the evolved skill text
     evolved_body = optimized_module.skill_text
     evolved_full = reassemble_skill(skill["frontmatter"], evolved_body)
+
+    # Save the optimized prompt wrapper (instruction + few-shot) for inspection
+    wrapper_path = Path("output") / skill_name / "evolved_prompt_wrapper.json"
+    wrapper_path.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        predictor = optimized_module.predictor
+        wrapper_data = {
+            "signature_doc": predictor.signature.__doc__,
+            "signature_instructions": getattr(predictor.signature, 'instructions', None),
+            "demos": [],
+        }
+        if hasattr(predictor, 'demos') and predictor.demos:
+            for demo in predictor.demos:
+                wrapper_data["demos"].append({
+                    "skill_instructions": getattr(demo, 'skill_instructions', '')[:200] + "...",
+                    "task_input": getattr(demo, 'task_input', '')[:200] + "...",
+                    "output": getattr(demo, 'output', '')[:200] + "...",
+                })
+        wrapper_path.write_text(json.dumps(wrapper_data, indent=2))
+        console.print(f"  Saved prompt wrapper to {wrapper_path}")
+    except Exception as e:
+        console.print(f"[yellow]Could not extract prompt wrapper: {e}[/yellow]")
 
     # ── 7. Validate evolved skill ───────────────────────────────────────
     console.print(f"\n[bold]Validating evolved skill[/bold]")
