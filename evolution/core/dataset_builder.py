@@ -16,6 +16,7 @@ from typing import Optional
 import dspy
 
 from evolution.core.config import EvolutionConfig
+from evolution.core.lm_tracker import LM_TRACKER
 
 
 @dataclass
@@ -194,6 +195,14 @@ class SyntheticDatasetBuilder:
         """Generate a full eval dataset with train/val/holdout splits."""
 
         n = num_cases or self.config.eval_dataset_size
+
+        # Track the dataset generation call
+        LM_TRACKER.record(
+            site="dataset_builder.generate",
+            model=self.config.judge_model,
+            input_chars=len(artifact_text),
+            phase="dataset_gen",
+        )
 
         # Configure DSPy to use the judge model for generation
         lm = dspy.LM(self.config.judge_model)

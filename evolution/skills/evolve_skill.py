@@ -39,6 +39,7 @@ from evolution.core.dataset_builder import SyntheticDatasetBuilder, EvalDataset,
 from evolution.core.external_importers import build_dataset_from_external
 from evolution.core.fitness import skill_fitness_metric, LLMJudge, FitnessScore, configure_sub_sampling
 from evolution.core.constraints import ConstraintValidator
+from evolution.core.lm_tracker import LM_TRACKER
 from evolution.skills.skill_module import (
     SkillModule,
     load_skill,
@@ -140,6 +141,9 @@ def evolve(
         config.hermes_agent_path = Path(hermes_repo)
 
     progress = ProgressLogger(Path(progress_file) if progress_file else None)
+    # Bind the LM call tracker to this run's progress logger
+    LM_TRACKER.bind_progress(progress)
+    LM_TRACKER.reset()
     progress.log("start", {"skill": skill_name, "model": eval_model, "auto_mode": auto_mode})
 
     # ── 1. Find and load the skill ──────────────────────────────────────
@@ -272,6 +276,30 @@ def evolve(
     start_time = time.time()
     progress.log("optimization_start", {"trials_planned": num_trials if not auto_mode else 10})
 
+    # ── Wrap reflection_lm to track its calls ──────────────────────────
+    _reflection_call_count = [0]  # mutable closure
+
+    class _TrackedReflectionLM:
+        """Wraps dspy.LM to count reflection calls for observability."""
+        def __init__(self, lm):
+            self._lm = lm
+            self.model = lm.model
+
+        def __call__(self, *args, **kwargs):
+            _reflection_call_count[0] += 1
+            # Rough input length from kwargs
+            input_chars = sum(len(str(v)) for v in kwargs.values()) if kwargs else 0
+            LM_TRACKER.record(
+                site="gepa_reflection",
+                model=str(getattr(self._lm, "model", "")),
+                input_chars=input_chars,
+                phase="reflection",
+            )
+            return self._lm(*args, **kwargs)
+
+        def __getattr__(self, name):
+            return getattr(self._lm, name)
+
     try:
         # reflection_lm: strong model for GEPA's reflection phase
         reflection_lm = dspy.LM(
@@ -279,11 +307,16 @@ def evolve(
             temperature=1.0,
             max_tokens=32000,
         )
+        tracked_reflection_lm = _TrackedReflectionLM(reflection_lm)
         optimizer = dspy.GEPA(
             metric=skill_fitness_metric,
             max_full_evals=iterations,
-            reflection_lm=reflection_lm,
+            reflection_lm=tracked_reflection_lm,
         )
+
+        console.print(f"  [dim]GEPA reflection LM: {eval_model} (tracked)[/dim]")
+        console.print(f"  [dim]Training set: {len(trainset)} examples, Validation set: {len(valset)} examples[/dim]")
+        console.print(f"  [dim]Expected minimum: {iterations} iterations × ~10 candidates × {len(trainset)} eval examples = ~{iterations * 10 * len(trainset)} forward calls[/dim]")
 
         optimized_module = optimizer.compile(
             baseline_module,
@@ -381,14 +414,20 @@ def evolve(
 
     baseline_scores = []
     evolved_scores = []
-    for ex in holdout_examples:
-        # Score baseline
+    for idx, ex in enumerate(holdout_examples):
+        # Score baseline — track these forward calls
         with dspy.context(lm=lm):
-            baseline_pred = baseline_module(task_input=ex.task_input)
+            baseline_pred = baseline_module(
+                task_input=ex.task_input,
+                _iteration=0, _candidate=0, _example=idx,
+            )
             baseline_score = skill_fitness_metric(ex, baseline_pred)
             baseline_scores.append(baseline_score)
 
-            evolved_pred = optimized_module(task_input=ex.task_input)
+            evolved_pred = optimized_module(
+                task_input=ex.task_input,
+                _iteration=0, _candidate=1, _example=idx,
+            )
             evolved_score = skill_fitness_metric(ex, evolved_pred)
             evolved_scores.append(evolved_score)
 
@@ -460,6 +499,16 @@ def evolve(
 
     console.print(f"\n  Output saved to {output_dir}/")
     progress.log("saved", {"output_dir": str(output_dir)})
+
+    # ── Emit LM call summary ────────────────────────────────────────────
+    summary = LM_TRACKER.summary()
+    progress.log("call_summary", {
+        "total_lm_calls": summary["total_lm_calls"],
+        "total_input_chars": summary["total_input_chars"],
+        "estimated_tokens": summary["estimated_tokens_premium"],
+        "calls_by_site": summary["calls_by_site"],
+        "chars_by_site": summary["chars_by_site"],
+    })
 
     if improvement > 0:
         console.print(f"\n[bold green]✓ Evolution improved skill by {improvement:+.3f} ({improvement/max(0.001, avg_baseline)*100:+.1f}%)[/bold green]")

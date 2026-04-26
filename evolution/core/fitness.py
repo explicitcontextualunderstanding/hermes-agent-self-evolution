@@ -10,6 +10,7 @@ from dataclasses import dataclass, field
 from typing import Optional
 
 from evolution.core.config import EvolutionConfig
+from evolution.core.lm_tracker import LM_TRACKER
 
 
 # ── Sub-sampled judge state (module-level singleton) ──────────────────────────
@@ -177,6 +178,14 @@ class LLMJudge:
         lm = dspy.LM(
             self.config.eval_model,
             base_url=os.environ.get("OPENAI_BASE_URL", None),
+        )
+
+        # Track the judge call
+        total_input_chars = len(task_input) + len(expected_behavior) + len(agent_output) + len(skill_text)
+        LM_TRACKER.record(
+            site="llm_judge.score",
+            model=self.config.eval_model,
+            input_chars=total_input_chars,
         )
 
         with dspy.context(lm=lm):

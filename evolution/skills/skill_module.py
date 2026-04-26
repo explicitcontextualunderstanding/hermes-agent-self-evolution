@@ -11,6 +11,8 @@ from typing import Optional
 
 import dspy
 
+from evolution.core.lm_tracker import LM_TRACKER
+
 
 def load_skill(skill_path: Path) -> dict:
     """Load a skill directory and concatenate all .md files.
@@ -121,7 +123,24 @@ class SkillModule(dspy.Module):
         self.skill_text = skill_text
         self.predictor = dspy.Predict(self.TaskWithSkill)
 
-    def forward(self, task_input: str) -> dspy.Prediction:
+    def forward(self, task_input: str, _iteration: Optional[int] = None,
+                _candidate: Optional[int] = None, _example: Optional[int] = None) -> dspy.Prediction:
+        # Track this LM call — it's the n² inner loop
+        model_name = ""
+        try:
+            import dspy
+            if hasattr(dspy.settings, "lm") and dspy.settings.lm is not None:
+                model_name = str(dspy.settings.lm.model or "")
+        except Exception:
+            pass
+        LM_TRACKER.record(
+            site="skill_module.forward",
+            model=model_name,
+            input_chars=len(self.skill_text) + len(task_input),
+            iteration=_iteration,
+            candidate=_candidate,
+            example=_example,
+        )
         result = self.predictor(
             skill_instructions=self.skill_text,
             task_input=task_input,

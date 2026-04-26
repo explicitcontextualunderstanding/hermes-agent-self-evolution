@@ -747,10 +747,107 @@ See the **Constraints & Guardrails** section above for the full enforcement list
 - **Holdout test sets** — separate from training data to catch overfitting
 
 ### Licensing
-- DSPy: MIT ✓ (can import and integrate freely)
-- GEPA: MIT ✓ (integrated into DSPy, also standalone `pip install gepa`)
-- Darwinian Evolver: AGPL v3 ⚠️ (external CLI only, no Python imports)
-- All Hermes-native code: MIT ✓
+|- DSPy: MIT ✓ (can import and integrate freely)
+|- GEPA: MIT ✓ (integrated into DSPy, also standalone `pip install gepa`)
+|- Darwinian Evolver: AGPL v3 ⚠️ (external CLI only, no Python imports)
+|- All Hermes-native code: MIT ✓
+
+|---
+
+## 🔴 Risk: Token Multiplication (O(n³) Explosion)
+
+### The Fundamental Problem
+
+The GEPA optimization loop exhibits an O(candidates × examples × iterations) pattern that, due to `SkillModule.forward()` making its OWN LLM call on every evaluation, creates an O(n³) explosion relative to any one dimension:
+
+```
+GEPA.compile() iteration i (n = 10 iters):
+  ├── Reflection: generate n candidates          → n LLM calls (skill text as context)
+  │
+  ├── For each candidate (n = 10):
+  │     For each train example (m = 10):
+  │       ├── SkillModule.forward(task_input)    ← m × n LLM CALLS (each sends full skill text!)
+  │       └── skill_fitness_metric(...)
+  │             └── LLMJudge (10% of calls)      ← ~0.1 × m × n LLM calls
+  │
+  └── Total per iteration: n + 1.1×m×n ≈ 120 LLM calls
+
+Over 10 iterations: ~1,200 LLM calls × ~15K input tokens each = ~18M input tokens
+```
+
+**The killer**: `SkillModule.forward()` (line 124 of `skill_module.py`):
+```python
+def forward(self, task_input: str) -> dspy.Prediction:
+    result = self.predictor(
+        skill_instructions=self.skill_text,  # ← 10K-20K tokens EVERY call
+        task_input=task_input,
+    )
+```
+This is a `dspy.Predict` call — it sends the FULL skill text as `skill_instructions` to the LLM on every forward pass. The evaluation loop doesn't just SCORE the skill, it RUNS it through the LLM for every training example.
+
+### Why This Overwhelms Every Provider
+
+With 12+ tokens across NVIDIA (5), Google (5), DeepSeek (1), Cloudflare (1), and Nous (2):
+
+| Provider | Tokens | What happens under sustained 1200-call load |
+|----------|--------|---------------------------------------------|
+| NVIDIA NIM (5 free+paid) | 5 sequential | Token 1 gets hit → 429 → rotate to 2 → ... → all 5 exhausted → circuit breaker trips (5+ min) |
+| Google AI Studio (5 free) | 5 rotating | Same pattern, but with per-token jittered cooldowns → longer recovery |
+| DeepSeek (paid) | 1, $20 credit | No rotation — every call burns credit. With 18M input tokens at ~$0.15/M = ~$2.70/run. 1200 calls × 15s avg = 5 hours per run. |
+| Cloudflare Workers AI | 1, 10K neurons/day | 18M input tokens / 1M × ~5000 neurons/M = ~90K neurons — 9× daily free limit |
+| Nous Inference API | 2 rotating | Exhausted in minutes |
+
+The proxy's token rotation (line 1314 of `kilo-proxy.py`, `response.status_code in [401, 403, 429]`) means a single hung evolution run will:
+1. Exhaust all 5 NVIDIA tokens sequentially
+2. Mark the provider degraded (3 consecutive failures)
+3. But the evolution process keeps retrying inside DSPy's httpx layer
+4. The cron tick spawns ANOTHER evolution process
+5. Multiple processes stack up, all hammering different providers simultaneously
+
+### How to Diagnose (Logging Instrumentation)
+
+Every LM call site is instrumented with a `LmCallTracker` singleton:
+
+| Call Site | File:Line | Type | Token Cost |
+|-----------|-----------|------|------------|
+| `SkillModule.forward()` | `skill_module.py:124` | **INNER LOOP** — n² evaluation call | Full skill text (~15K in) |
+| `SyntheticDatasetBuilder.generate()` | `dataset_builder.py:199` | Dataset generation | Full skill text (~15K in) |
+| `GEPA reflection_lm` | `evolve_skill.py:277` | Candidate generation | skill text + signature (~20K in) |
+| `LLMJudge.score()` | `fitness.py:177` | Scorer (10% of eval calls) | task + expected + output (~3K in) |
+| `_patched_request` | `evolve_skill.py:22` | Socket-level timeout wrapper | affects only `requests` (not httpx!) |
+
+### What the Logs Should Show
+
+When running evolution, the console and `progress.jsonl` now emit structured call records:
+
+```jsonl
+{"phase": "lm_call", "site": "skill_module.forward", "model": "deepseek-v4-flash",
+ "input_chars": 15234, "iteration": 3, "candidate": 7, "example": 5, "_elapsed": 45.2}
+{"phase": "lm_call", "site": "llm_judge.score", "model": "deepseek-v4-flash",
+ "input_chars": 2891, "region": "uncertainty_zone", "_elapsed": 46.1}
+{"phase": "call_summary", "total_lm_calls": 847, "total_input_chars": 12812450,
+ "calls_by_site": {"forward": 700, "judge": 70, "reflection": 70, "dataset_gen": 1, "holdout": 6},
+ "_elapsed": 612.0}
+```
+
+### Current Gaps
+
+1. **`socket.setdefaulttimeout(45)` doesn't reach httpx** — DSPy/litellm uses httpx internally, which manages its own connection pool. The timeout patch in `evolve_skill.py` lines 18-28 only affects raw `requests` calls, not DSPy's httpx transport.
+
+2. **No evolution-level timeout** — `GEPA.compile()` blocks until all iterations complete. If one reflection call takes 80s (common for minimax-m2.7), 10 candidates × 80s = 13 minutes per iteration. The cron session times out but the OS process keeps running.
+
+3. **Split-brain model routing** — `GEPA` gets its LM from `dspy.configure(lm=...)`, but `skill_fitness_metric` reads `DSPY_EVAL_MODEL` env var, and `SyntheticDatasetBuilder` reads `config.judge_model`. Three independent model configurations.
+
+### Mitigation Strategies
+
+| Strategy | Impact | Effort |
+|----------|--------|--------|
+| **Log before acting** — instrument all call sites (this section) | Visibility | 1 hour |
+| **Short-circuit forward()** — `SkillModule.forward()` returns skill text directly, don't call the LLM | Eliminates n² explosion | 1 hour |
+| **Single-example eval** — evaluate on 1-2 examples per iteration instead of all 10 | 5×-10× reduction | 30 min |
+| **Add httpx timeout** — set explicit per-call timeout for DSPy's httpx transport | Prevents silent retry loops | 30 min |
+| **Process-level timeout** — add wall-clock limit to `GEPA.compile()` | Prevents zombie processes | 15 min |
+| **Cache forward() results** — cache `SkillModule.forward(task_input)` keyed by (skill_body_hash, task_input) | 10×-100× reduction for repeated evals | 1 hour |
 
 ---
 
