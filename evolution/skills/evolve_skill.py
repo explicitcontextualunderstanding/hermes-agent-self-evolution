@@ -22,7 +22,7 @@ from rich.table import Table
 from evolution.core.config import EvolutionConfig, get_hermes_agent_path
 from evolution.core.dataset_builder import SyntheticDatasetBuilder, EvalDataset, GoldenDatasetLoader
 from evolution.core.external_importers import build_dataset_from_external
-from evolution.core.fitness import skill_fitness_metric, LLMJudge, FitnessScore
+from evolution.core.fitness import skill_fitness_metric, LLMJudge, FitnessScore, configure_sub_sampling
 from evolution.core.constraints import ConstraintValidator
 from evolution.skills.skill_module import (
     SkillModule,
@@ -222,6 +222,17 @@ def evolve(
     console.print(f"  Optimizer: GEPA ({iterations} iterations)")
     console.print(f"  Optimizer model: {optimizer_model}")
     console.print(f"  Eval model: {eval_model}")
+
+    # Configure sub-sampled LLM-as-judge for the fitness function
+    # Uses heuristic gating (0.4-0.7 uncertainty zone) + 10% random sampling
+    # to reduce LLMJudge calls while preserving gradient for GEPA
+    configure_sub_sampling(
+        enabled=True,
+        sample_rate=0.10,
+        uncertainty_min=0.4,
+        uncertainty_max=0.7,
+    )
+    console.print(f"  Judge: sub-sampled (10% in 0.4-0.7 uncertainty zone)")
 
     # Configure DSPy
     lm = dspy.LM(model=eval_model, temperature=1.0, max_tokens=32000)
