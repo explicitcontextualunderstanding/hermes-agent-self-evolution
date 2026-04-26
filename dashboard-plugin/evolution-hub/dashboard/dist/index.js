@@ -1364,7 +1364,7 @@
 
     function init(p) {
       p.disableFriendlyErrors = true;
-      p.createCanvas(p.windowWidth, 120);
+      p.createCanvas(200, 100);
       p.colorMode(p.HSB, 360, 100, 100, 100);
       p.noStroke();
       for (var i = 0; i < NUM_P; i++) {
@@ -1459,9 +1459,13 @@
       var Sketch = function(p) {
         p.setup = function() { init(p); };
         p.draw  = function() { draw(p); };
-        p.windowResized = function() { p.resizeCanvas(p.windowWidth, 120); };
       };
-      p5Inst = new window.p5(Sketch, document.getElementById("evo-gen-canvas"));
+      p5Inst = new window.p5(Sketch);
+      // Move canvas into header-banner container
+      var container = document.getElementById("evo-gen-canvas");
+      if (container && p5Inst.canvas) {
+        container.appendChild(p5Inst.canvas);
+      }
     }
 
     function start() {
