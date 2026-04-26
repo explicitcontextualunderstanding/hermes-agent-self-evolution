@@ -490,11 +490,52 @@
     );
   }
 
+  // ── Skill Detail Modal (from Generative Cockpit's Modal pattern) ────
+
+  function EvoModal(_ref5) {
+    var skillName = _ref5.skillName;
+    var onClose = _ref5.onClose;
+
+    useEffect(function () {
+      function handleKey(e) {
+        if (e.key === "Escape" && onClose) onClose();
+      }
+      document.addEventListener("keydown", handleKey);
+      return function () { document.removeEventListener("keydown", handleKey); };
+    }, [onClose]);
+
+    useEffect(function () {
+      document.body.style.overflow = "hidden";
+      return function () { document.body.style.overflow = ""; };
+    }, []);
+
+    return React.createElement("div", {
+      className: "evo-modal-backdrop",
+      onClick: function (e) { if (e.target === e.currentTarget) onClose(); },
+    },
+      React.createElement("div", { className: "evo-modal-content card-notched" },
+        React.createElement("div", { className: "flex items-center justify-between mb-3" },
+          React.createElement("span", { className: "text-xs font-medium text-muted-foreground uppercase tracking-wider" }, "Skill Detail"),
+          React.createElement("span", { className: "text-sm font-medium" }, skillName.replace(/-/g, " ")),
+          React.createElement(Button, {
+            className: "text-xs h-5 w-5 p-0",
+            variant: "ghost",
+            onClick: onClose,
+          }, "\u2716"),
+        ),
+        React.createElement(ExpandableSkillDetail, {
+          skillName: skillName,
+          onClose: onClose,
+        }),
+      ),
+    );
+  }
+
   // ── p5.js Topology View ────────────────────────────────────────────
 
-  function TopologyView(_ref5) {
-    var skills = _ref5.skills;
-    var onNodeClick = _ref5.onNodeClick;
+  function TopologyView(_ref6) {
+    var skills = _ref6.skills;
+    var onNodeClick = _ref6.onNodeClick;
     var containerRef = useRef(null);
     var labelLayerRef = useRef(null);
     var canvasSize = useRef({ w: 800, h: 600 });
@@ -856,8 +897,11 @@
                     React.createElement("div", { className: "flex items-center gap-1.5" },
                       React.createElement("span", {
                         className: cn(
-                          "w-1.5 h-1.5 rounded-full shrink-0",
-                          skill.status === "running" ? "bg-success" : skill.status === "failed" ? "bg-destructive" : skill.status === "completed" || skill.status === "no_improvement" ? "bg-accent" : "bg-muted-foreground/40"
+                          "ev-dot-glowing",
+                          skill.status === "running" ? "ev-dot-running"
+                          : skill.status === "failed" ? "ev-dot-failed"
+                          : skill.status === "completed" || skill.status === "no_improvement" ? "ev-dot-completed"
+                          : "ev-dot-pending"
                         ),
                       }),
                       React.createElement("span", {
@@ -883,13 +927,7 @@
                     ),
                   ),
 
-                  // Expanded detail
-                  isSelected && React.createElement("div", { className: "mt-1 mb-2" },
-                    React.createElement(ExpandableSkillDetail, {
-                      skillName: skill.name,
-                      onClose: function () { onSkillClick(null); },
-                    }),
-                  ),
+                  // No inline detail — uses modal instead
                 );
               }),
         );
@@ -925,6 +963,9 @@
     var _ts = useState(null);
     var topologySkill = _ts[0];
     var setTopologySkill = _ts[1];
+    var _ms = useState(null);
+    var modalSkill = _ms[0];
+    var setModalSkill = _ms[1];
 
     function fetchAll() {
       SDK.fetchJSON("/api/plugins/evolution-hub/batch-health")
@@ -965,9 +1006,11 @@
     function handleSkillClick(name) {
       if (selectedSkill === name) {
         setSelectedSkill(null);
+        setModalSkill(null);
         return;
       }
       setSelectedSkill(name);
+      setModalSkill(name);
     }
 
     function handleTopologyClick(name) {
@@ -1214,11 +1257,7 @@
                         : "\u2014"
                     ),
                   ),
-                  // Expanded detail row
-                  isSelected && React.createElement(ExpandableSkillDetail, {
-                    skillName: skill.name,
-                    onClose: function () { setSelectedSkill(null); },
-                  }),
+                  // No inline detail — uses modal instead
                 );
               })
             : React.createElement("div", { className: "text-xs text-muted-foreground text-center py-4" },
@@ -1292,6 +1331,12 @@
         skills: queue ? queue.skills : [],
         selectedSkill: selectedSkill,
         onSkillClick: handleSkillClick,
+      }),
+
+      // ── Skill Detail Modal ──
+      modalSkill && React.createElement(EvoModal, {
+        skillName: modalSkill,
+        onClose: function () { setModalSkill(null); setSelectedSkill(null); },
       }),
 
     ); // end outer div

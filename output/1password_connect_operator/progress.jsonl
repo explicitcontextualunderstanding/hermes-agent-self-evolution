@@ -1,2 +1,5 @@
-{"phase": "start", "skill": "1password_connect_operator", "model": "openai/nvidia-proxy/nvidia/nemotron-3-super-120b-a12b", "auto_mode": "heavy", "_ts": "2026-04-26T14:13:54.178352Z", "_elapsed": 0.0}
-{"phase": "skill_loaded", "name": "1Password Connect Operator", "size": 17102, "_ts": "2026-04-26T14:13:54.183778Z", "_elapsed": 0.01}
+{"phase": "start", "skill": "1password_connect_operator", "model": "openai/deepseek-proxy/deepseek-v4-flash", "auto_mode": "light", "_ts": "2026-04-26T14:36:39.272901Z", "_elapsed": 0.0}
+{"phase": "skill_loaded", "name": "1Password Connect Operator", "size": 17102, "_ts": "2026-04-26T14:36:39.284214Z", "_elapsed": 0.01}
+{"phase": "dataset_ready", "train": 10, "val": 5, "holdout": 5, "_ts": "2026-04-26T14:36:39.393986Z", "_elapsed": 0.12}
+{"phase": "constraints_checked", "passed": true, "checks": [{"name": "size_limit", "passed": true}, {"name": "non_empty", "passed": true}, {"name": "skill_structure", "passed": true}], "_ts": "2026-04-26T14:36:39.395664Z", "_elapsed": 0.12}
+{"phase": "optimization_start", "trials_planned": 10, "_ts": "2026-04-26T14:36:39.397118Z", "_elapsed": 0.12}
