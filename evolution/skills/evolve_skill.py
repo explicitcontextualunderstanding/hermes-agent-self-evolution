@@ -7,11 +7,26 @@ Usage:
 
 import json
 import logging
+import socket
 import sys
 import time
 from pathlib import Path
 from datetime import datetime
 from typing import Optional
+
+# ── Socket/request timeouts BEFORE any DSPy/litellm import ──────────────────
+socket.setdefaulttimeout(45)
+try:
+    import requests as _requests_mod
+    _orig_request = _requests_mod.Session.request
+    def _patched_request(self, method, url, **kwargs):
+        if "timeout" not in kwargs:
+            kwargs["timeout"] = (30, 120)
+        return _orig_request(self, method, url, **kwargs)
+    _requests_mod.Session.request = _patched_request
+except ImportError:
+    pass  # requests not available, will use stdlib socket timeout only
+# ────────────────────────────────────────────────────────────────────────────
 
 import click
 import dspy

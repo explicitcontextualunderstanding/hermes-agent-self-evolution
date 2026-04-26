@@ -1,5 +1,2 @@
-{"phase": "start", "skill": "socket-relay-architecture", "model": "openai/deepseek-proxy/deepseek-v4-flash", "auto_mode": "light", "_ts": "2026-04-26T15:02:12.115630Z", "_elapsed": 0.0}
-{"phase": "skill_loaded", "name": "", "size": 5738, "_ts": "2026-04-26T15:02:12.122069Z", "_elapsed": 0.01}
-{"phase": "dataset_ready", "train": 10, "val": 5, "holdout": 5, "_ts": "2026-04-26T15:02:12.213464Z", "_elapsed": 0.1}
-{"phase": "constraints_checked", "passed": true, "checks": [{"name": "size_limit", "passed": true}, {"name": "non_empty", "passed": true}, {"name": "skill_structure", "passed": true}], "_ts": "2026-04-26T15:02:12.214136Z", "_elapsed": 0.1}
-{"phase": "optimization_start", "trials_planned": 10, "_ts": "2026-04-26T15:02:12.214852Z", "_elapsed": 0.1}
+{"phase": "start", "skill": "socket-relay-architecture", "model": "openai/nvidia-proxy/nvidia/nemotron-3-super-120b-a12b", "auto_mode": "light", "_ts": "2026-04-26T15:09:02.491976Z", "_elapsed": 0.0}
+{"phase": "skill_loaded", "name": "", "size": 5738, "_ts": "2026-04-26T15:09:02.495744Z", "_elapsed": 0.0}

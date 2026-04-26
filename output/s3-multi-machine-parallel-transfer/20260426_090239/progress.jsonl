@@ -6,5 +6,3 @@
 {"phase": "optimization_complete", "elapsed": 72.31190800666809, "trials_completed": 0, "best_score": null, "_ts": "2026-04-26T16:02:39.136587Z", "_elapsed": 72.39}
 {"phase": "evolved_constraints", "passed": true, "_ts": "2026-04-26T16:02:39.138266Z", "_elapsed": 72.4}
 {"phase": "holdout", "baseline": 0.0, "evolved": 0.0, "improvement": 0.0, "_ts": "2026-04-26T16:02:39.138524Z", "_elapsed": 72.4}
-{"phase": "saved", "output_dir": "output/s3-multi-machine-parallel-transfer/20260426_090239", "_ts": "2026-04-26T16:02:39.141553Z", "_elapsed": 72.4}
-{"phase": "complete", "status": "no_improvement", "improvement": 0.0, "_ts": "2026-04-26T16:02:39.141966Z", "_elapsed": 72.4}

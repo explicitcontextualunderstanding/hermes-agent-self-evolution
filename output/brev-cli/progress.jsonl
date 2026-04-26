@@ -1,5 +1,2 @@
-{"phase": "start", "skill": "brev-cli", "model": "openai/deepseek-proxy/deepseek-v4-flash", "auto_mode": "heavy", "_ts": "2026-04-26T14:15:32.494523Z", "_elapsed": 0.0}
-{"phase": "skill_loaded", "name": "brev-cli", "size": 9869, "_ts": "2026-04-26T14:15:32.498672Z", "_elapsed": 0.0}
-{"phase": "dataset_ready", "train": 10, "val": 5, "holdout": 5, "_ts": "2026-04-26T14:16:08.003577Z", "_elapsed": 35.51}
-{"phase": "constraints_checked", "passed": true, "checks": [{"name": "size_limit", "passed": true}, {"name": "non_empty", "passed": true}, {"name": "skill_structure", "passed": true}], "_ts": "2026-04-26T14:16:08.009814Z", "_elapsed": 35.52}
-{"phase": "optimization_start", "trials_planned": 10, "_ts": "2026-04-26T14:16:08.022753Z", "_elapsed": 35.53}
+{"phase": "start", "skill": "brev-cli", "model": "openai/nvidia-proxy/nvidia/nemotron-3-super-120b-a12b", "auto_mode": "light", "_ts": "2026-04-26T15:49:05.751060Z", "_elapsed": 0.0}
+{"phase": "skill_loaded", "name": "brev-cli", "size": 9869, "_ts": "2026-04-26T15:49:05.755801Z", "_elapsed": 0.0}

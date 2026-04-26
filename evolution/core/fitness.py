@@ -174,7 +174,10 @@ class LLMJudge:
         artifact_size: Optional[int] = None,
         max_size: Optional[int] = None,
     ) -> FitnessScore:
-        lm = dspy.LM(self.config.eval_model)
+        lm = dspy.LM(
+            self.config.eval_model,
+            base_url=os.environ.get("OPENAI_BASE_URL", None),
+        )
 
         with dspy.context(lm=lm):
             result = self.judge(

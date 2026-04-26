@@ -7,6 +7,7 @@ C) Golden sets — hand-curated JSONL files
 """
 
 import json
+import os
 import random
 from pathlib import Path
 from dataclasses import dataclass, field
@@ -118,7 +119,7 @@ class SyntheticDatasetBuilder:
 
     def __init__(self, config: EvolutionConfig):
         self.config = config
-        self.generator = dspy.ChainOfThought(self.GenerateTestCases)
+        self.generator = dspy.Predict(self.GenerateTestCases)
 
     def _parse_test_cases(self, raw_text: str) -> list:
         """Robustly parse JSON test cases with multiple fallback strategies."""

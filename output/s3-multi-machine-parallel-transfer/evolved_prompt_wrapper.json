@@ -1,0 +1,5 @@
+{
+  "signature_doc": "Complete a task following the provided skill instructions.\n\nYou are an AI agent following specific skill instructions to complete a task.\nRead the skill instructions carefully and follow the procedure described.",
+  "signature_instructions": "Complete a task following the provided skill instructions.\n\nYou are an AI agent following specific skill instructions to complete a task.\nRead the skill instructions carefully and follow the procedure described.",
+  "demos": []
+}
