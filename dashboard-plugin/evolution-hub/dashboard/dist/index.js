@@ -16,98 +16,13 @@
 (function () {
   "use strict";
 
-  // ── Inject dynamic CSS ─────────────────────────────────────────────
-  (function injectStyles() {
-    var styleId = "evolution-hub-dynamic";
-    if (document.getElementById(styleId)) return;
-    var style = document.createElement("style");
-    style.id = styleId;
-    style.textContent = [
-      /* Status dot pulsing — green when active, red when stale */
-      "@keyframes pulse-dot {",
-      "  0%, 100% { opacity: 1; transform: scale(1); }",
-      "  50% { opacity: 0.6; transform: scale(1.3); }",
-      "}",
-      ".ev-dot-running { animation: pulse-dot 1.5s ease-in-out infinite; }",
-      ".ev-dot-stale { animation: pulse-dot 0.8s ease-in-out infinite; }",
-
-      /* LIVE badge pulsing */
-      "@keyframes pulse-live {",
-      "  0%, 100% { opacity: 1; }",
-      "  50% { opacity: 0.5; }",
-      "}",
-      ".ev-live-badge { animation: pulse-live 1.2s ease-in-out infinite; }",
-
-      /* Progress bar fill animation */
-      "@keyframes fill-bar {",
-      "  from { width: 0%; }",
-      "}",
-      ".ev-progress-fill { animation: fill-bar 0.8s ease-out; }",
-
-      /* Counter tick animation */
-      "@keyframes count-tick {",
-      "  0% { transform: translateY(-4px); opacity: 0.5; }",
-      "  100% { transform: translateY(0); opacity: 1; }",
-      "}",
-      ".ev-count-change { animation: count-tick 0.3s ease-out; }",
-
-      /* Queue row pulse when running */
-      "@keyframes row-pulse {",
-      "  0%, 100% { border-left-color: transparent; }",
-      "  50% { border-left-color: rgba(34, 197, 94, 0.5); }",
-      "}",
-      ".ev-row-running {",
-      "  border-left: 2px solid transparent;",
-      "  animation: row-pulse 2s ease-in-out infinite;",
-      "}",
-
-      /* Shimmer gradient on cards during active batch */
-      "@keyframes shimmer {",
-      "  0% { background-position: -200% 0; }",
-      "  100% { background-position: 200% 0; }",
-      "}",
-      ".ev-shimmer {",
-      "  background: linear-gradient(90deg, transparent 0%, rgba(59,130,246,0.04) 50%, transparent 100%);",
-      "  background-size: 200% 100%;",
-      "  animation: shimmer 3s ease-in-out infinite;",
-      "}",
-
-      /* Scanline intensify on active batch */
-      "@keyframes scanline-drift {",
-      "  0% { transform: translateY(0); }",
-      "  100% { transform: translateY(4px); }",
-      "}",
-
-      /* New log line highlight */
-      "@keyframes log-flash {",
-      "  0% { background: rgba(59, 130, 246, 0.08); }",
-      "  100% { background: transparent; }",
-      "}",
-      ".ev-log-new { animation: log-flash 1.5s ease-out; }",
-
-      /* Completion counter celebration */
-      "@keyframes celebrate {",
-      "  0% { transform: scale(1); }",
-      "  50% { transform: scale(1.08); }",
-      "  100% { transform: scale(1); }",
-      "}",
-      ".ev-celebrate { animation: celebrate 0.5s ease-in-out 3; }",
-
-      /* Error badge glow pulse */
-      "@keyframes error-glow {",
-      "  0%, 100% { box-shadow: 0 0 4px rgba(239, 68, 68, 0.3); }",
-      "  50% { box-shadow: 0 0 12px rgba(239, 68, 68, 0.6); }",
-      "}",
-      ".ev-error-glow { animation: error-glow 1s ease-in-out infinite; }",
-    ].join("\n");
-    document.head.appendChild(style);
-    // Load p5.js from Cloudflare CDN for topology view
-    if (!document.querySelector('script[src*="p5.js"]')) {
-      var p5script = document.createElement("script");
-      p5script.src = "https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.11.3/p5.min.js";
-      p5script.defer = true;
-      document.head.appendChild(p5script);
-    }
+  // ── Load p5.js from CDN for topology view ─────────────────────────
+  (function loadP5() {
+    if (document.querySelector('script[src*="p5.js"]')) return;
+    var s = document.createElement("script");
+    s.src = "https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.11.3/p5.min.js";
+    s.defer = true;
+    document.head.appendChild(s);
   })();
 
   const SDK = window.__HERMES_PLUGIN_SDK__;
