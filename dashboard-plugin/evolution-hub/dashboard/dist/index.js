@@ -966,6 +966,9 @@
     var _ms = useState(null);
     var modalSkill = _ms[0];
     var setModalSkill = _ms[1];
+    var _pal = useState({ bg: "#0a0e1a", mid: "#3b82f6", fg: "#60a5fa" });
+    var palette = _pal[0];
+    var setPalette = _pal[1];
 
     function fetchAll() {
       SDK.fetchJSON("/api/plugins/evolution-hub/batch-health")
@@ -1002,6 +1005,13 @@
       var iv = setInterval(fetchAll, POLL_INTERVAL);
       return function () { clearInterval(iv); };
     }, [showErrorsOnly]);
+
+    // Start generative canvas for palette extraction
+    useEffect(function () {
+      GenCanvas.start();
+      var iv = setInterval(function () { setPalette(Object.assign({}, GenCanvas.getPalette())); }, 1200);
+      return function () { clearInterval(iv); GenCanvas.stop(); };
+    }, []);
 
     function handleSkillClick(name) {
       if (selectedSkill === name) {
@@ -1049,6 +1059,27 @@
     return React.createElement("div", {
       className: cn("evo-ambient-glow flex flex-col gap-5", isRunning && "ev-shimmer"),
     },
+
+      // ── Generative canvas header ──
+      React.createElement("div", {
+        className: "flex items-center gap-3 px-0 py-1",
+      },
+        React.createElement("div", {
+          id: "evo-gen-canvas",
+          className: "shrink-0",
+          style: { width: "120px", height: "60px", borderRadius: "4px", overflow: "hidden", border: "1px solid rgba(59, 130, 246, 0.12)" }
+        }),
+        React.createElement("div", { className: "flex flex-col gap-0.5" },
+          React.createElement("span", { className: "text-[10px] font-medium text-muted-foreground uppercase tracking-wider" }, "Generative Canvas"),
+          React.createElement("div", { className: "flex gap-1.5" },
+            React.createElement("div", { style: { width: 8, height: 8, borderRadius: "50%", backgroundColor: palette.bg, border: "1px solid rgba(255,255,255,0.12)", boxShadow: "0 0 3px " + palette.bg, transition: "all 0.8s ease" } }),
+            React.createElement("div", { style: { width: 8, height: 8, borderRadius: "50%", backgroundColor: palette.mid, border: "1px solid rgba(255,255,255,0.12)", boxShadow: "0 0 3px " + palette.mid, transition: "all 0.8s ease" } }),
+            React.createElement("div", { style: { width: 8, height: 8, borderRadius: "50%", backgroundColor: palette.fg, border: "1px solid rgba(255,255,255,0.12)", boxShadow: "0 0 3px " + palette.fg, transition: "all 0.8s ease" } }),
+          ),
+        ),
+        React.createElement("div", { className: "flex-1" }),
+        React.createElement("span", { className: "text-[10px] text-muted-foreground/40 font-courier", style: { color: "var(--gen-palette-mid, rgba(255,255,255,0.2))" } }, "Canvas Live"),
+      ),
 
       // ── Sub-navigation tabs ──
       React.createElement("div", { className: "flex items-center gap-1 border-b border-border pb-2 mb-1" },
