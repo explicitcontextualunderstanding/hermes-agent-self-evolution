@@ -1342,8 +1342,195 @@
     ); // end outer div
   }
 
+  // ── Generative Canvas (header-banner slot) ──────────────────────────
+  // Perlin noise flow-field particle system with k-means color extraction.
+  // Writes --gen-palette-* CSS vars on :root for real-time theme cascade.
+  // Adapted from Generative Cockpit's GenCanvas pattern.
+
+  var GenCanvas = (function () {
+    var p5Inst = null;
+    var frameCount = 0;
+    var palette = { bg: "#0a0e1a", mid: "#3b82f6", fg: "#60a5fa" };
+    var particles = [];
+    var NUM_P = 120;
+    var running = false;
+
+    function fbm(x, y, o) {
+      o = o || 4;
+      var v = 0, a = 1, f = 1, s = 0;
+      for (var i = 0; i < o; i++) { v += p5Inst.noise(x*f, y*f)*a; s += a; a *= 0.5; f *= 2; }
+      return v / s;
+    }
+
+    function init(p) {
+      p.disableFriendlyErrors = true;
+      p.createCanvas(p.windowWidth, 120);
+      p.colorMode(p.HSB, 360, 100, 100, 100);
+      p.noStroke();
+      for (var i = 0; i < NUM_P; i++) {
+        particles.push({
+          x: p.random(p.width), y: p.random(p.height),
+          speed: p.random(0.6, 2.0), sz: p.random(1.5, 4.0),
+          hue: p.random(180, 260), life: p.random(1),
+          dec: p.random(0.003, 0.01), osc: p.random(p.TWO_PI)
+        });
+      }
+    }
+
+    function aurora(p) {
+      p.background(0, 0, 3, 18);
+      var t = p.millis() * 0.0003;
+      for (var i = 0; i < particles.length; i++) {
+        var pt = particles[i];
+        var n = fbm(pt.x*0.002 + t*0.3, pt.y*0.002 + t*0.15);
+        pt.x += Math.cos(n * p.TWO_PI * 2) * pt.speed;
+        pt.y += Math.sin(n * p.TWO_PI * 2) * pt.speed;
+        pt.life -= pt.dec; pt.osc += 0.05;
+        pt.hue = (pt.hue + 0.08) % 360;
+        if (pt.life <= 0 || pt.x < 0 || pt.x > p.width || pt.y < 0 || pt.y > p.height) {
+          pt.x = p.random(p.width); pt.y = p.random(p.height);
+          pt.life = 1; pt.hue = 180 + p.random(80);
+        }
+        p.fill(pt.hue, 70, 70 + Math.sin(pt.osc)*15, pt.life * 55);
+        p.ellipse(pt.x, pt.y, pt.sz);
+      }
+    }
+
+    function extractColors(p) {
+      if (frameCount % 15 !== 0) return;
+      p.loadPixels();
+      var d = p.pixels;
+      var samples = [];
+      var step = Math.max(1, Math.floor(d.length / 16000 / 4));
+      for (var i = 0; i < d.length; i += step * 4) {
+        if (d[i+3] > 100) {
+          var br = (d[i] + d[i+1] + d[i+2]) / 3;
+          if (br > 5 && br < 240) samples.push([d[i], d[i+1], d[i+2]]);
+        }
+      }
+      if (samples.length < 9) return;
+
+      var cents = [
+        samples[Math.floor(Math.random() * samples.length)],
+        samples[Math.floor(Math.random() * samples.length)],
+        samples[Math.floor(Math.random() * samples.length)]
+      ];
+      for (var iter = 0; iter < 6; iter++) {
+        var clusters = [[], [], []];
+        for (var s = 0; s < samples.length; s++) {
+          var minDist = Infinity, assign = 0;
+          for (var c = 0; c < 3; c++) {
+            var dr = samples[s][0] - cents[c][0], dg = samples[s][1] - cents[c][1], db = samples[s][2] - cents[c][2];
+            var dist = dr*dr + dg*dg + db*db;
+            if (dist < minDist) { minDist = dist; assign = c; }
+          }
+          clusters[assign].push(samples[s]);
+        }
+        for (var c2 = 0; c2 < 3; c2++) {
+          if (clusters[c2].length > 0) {
+            var sr = 0, sg = 0, sb = 0;
+            for (var s2 = 0; s2 < clusters[c2].length; s2++) { sr += clusters[c2][s2][0]; sg += clusters[c2][s2][1]; sb += clusters[c2][s2][2]; }
+            cents[c2] = [Math.round(sr/clusters[c2].length), Math.round(sg/clusters[c2].length), Math.round(sb/clusters[c2].length)];
+          }
+        }
+      }
+      cents.sort(function (a, b) {
+        return (a[0]*0.299 + a[1]*0.587 + a[2]*0.114) - (b[0]*0.299 + b[1]*0.587 + b[2]*0.114);
+      });
+      var toHex = function(v) { return Math.min(255, Math.max(0, v)).toString(16).padStart(2, "0"); };
+      palette = {
+        bg:  "#" + cents[0].map(toHex).join(""),
+        mid: "#" + cents[1].map(toHex).join(""),
+        fg:  "#" + cents[2].map(toHex).join("")
+      };
+      var root = document.documentElement;
+      root.style.setProperty("--gen-palette-bg", palette.bg);
+      root.style.setProperty("--gen-palette-mid", palette.mid);
+      root.style.setProperty("--gen-palette-fg", palette.fg);
+    }
+
+    function draw(p) {
+      frameCount++;
+      aurora(p);
+      extractColors(p);
+    }
+
+    function initP5() {
+      var Sketch = function(p) {
+        p.setup = function() { init(p); };
+        p.draw  = function() { draw(p); };
+        p.windowResized = function() { p.resizeCanvas(p.windowWidth, 120); };
+      };
+      p5Inst = new window.p5(Sketch, document.getElementById("evo-gen-canvas"));
+    }
+
+    function start() {
+      if (running) return;
+      running = true;
+      if (window.p5) { initP5(); return; }
+      // p5.js may already be loading from the topology CDN — poll briefly
+      var attempts = 0;
+      var iv = setInterval(function () {
+        if (window.p5) { clearInterval(iv); initP5(); }
+        else if (++attempts > 25) { clearInterval(iv); console.warn("[evo] p5 CDN timeout"); }
+      }, 200);
+    }
+
+    function stop() {
+      running = false;
+      if (p5Inst) { p5Inst.remove(); p5Inst = null; }
+    }
+
+    return {
+      start: start,
+      stop: stop,
+      getPalette: function() { return palette; },
+    };
+  })();
+
+  // ── Header Banner Content (header-banner slot) ─────────────────────
+
+  function HeaderBannerContent() {
+    var _pal = useState({ bg: "#0a0e1a", mid: "#3b82f6", fg: "#60a5fa" });
+    var pal = _pal[0];
+    var setPal = _pal[1];
+
+    useEffect(function () {
+      GenCanvas.start();
+      var iv = setInterval(function () { setPal(Object.assign({}, GenCanvas.getPalette())); }, 1200);
+      return function () { clearInterval(iv); GenCanvas.stop(); };
+    }, []);
+
+    return React.createElement("div", {
+      style: {
+        display: "flex", alignItems: "center", gap: "0.75rem",
+        padding: "0 0.5rem", height: "100%",
+      }
+    },
+      React.createElement("div", {
+        id: "evo-gen-canvas",
+        style: {
+          width: "200px", height: "100px", borderRadius: "6px",
+          overflow: "hidden", flexShrink: 0,
+          border: "1px solid rgba(59, 130, 246, 0.15)",
+        }
+      }),
+      React.createElement("div", { style: { display: "flex", flexDirection: "column", gap: "0.15rem" } },
+        React.createElement("span", {
+          style: { fontSize: "0.6rem", letterSpacing: "0.1em", opacity: 0.6, color: "var(--gen-palette-mid, #3b82f6)", fontFamily: "JetBrains Mono, monospace" }
+        }, "EVOLUTION HUB"),
+        React.createElement("div", { style: { display: "flex", gap: "4px" } },
+          React.createElement("div", { style: { width: 10, height: 10, borderRadius: "50%", backgroundColor: pal.bg, border: "1px solid rgba(255,255,255,0.15)", boxShadow: "0 0 4px " + pal.bg, transition: "background-color 0.8s ease, box-shadow 0.8s ease" } }),
+          React.createElement("div", { style: { width: 10, height: 10, borderRadius: "50%", backgroundColor: pal.mid, border: "1px solid rgba(255,255,255,0.15)", boxShadow: "0 0 4px " + pal.mid, transition: "background-color 0.8s ease, box-shadow 0.8s ease" } }),
+          React.createElement("div", { style: { width: 10, height: 10, borderRadius: "50%", backgroundColor: pal.fg, border: "1px solid rgba(255,255,255,0.15)", boxShadow: "0 0 4px " + pal.fg, transition: "background-color 0.8s ease, box-shadow 0.8s ease" } }),
+        ),
+      ),
+    );
+  }
+
   // ── Registration ─────────────────────────────────────────────────────
 
   window.__HERMES_PLUGINS__.register("evolution-hub", EvolutionHubPage);
   window.__HERMES_PLUGINS__.registerSlot("evolution-hub", "sidebar", SidebarControls);
+  window.__HERMES_PLUGINS__.registerSlot("evolution-hub", "header-banner", HeaderBannerContent);
 })();

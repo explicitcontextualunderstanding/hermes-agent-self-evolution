@@ -79,7 +79,7 @@
   clip-path: polygon(16px 0, 100% 0, 100% calc(100% - 16px), calc(100% - 16px) 100%, 0 100%, 0 16px);
 }
 
-/* ── Ambient glow backdrop — double radial gradient ── */
+/* ── Ambient glow backdrop — reads --gen-palette-* from canvas ── */
 .evo-ambient-glow {
   position: relative;
 }
@@ -90,8 +90,9 @@
   pointer-events: none;
   z-index: -1;
   background:
-    radial-gradient(ellipse at 20% 50%, rgba(59, 130, 246, 0.09) 0%, transparent 60%),
-    radial-gradient(ellipse at 80% 20%, rgba(96, 165, 250, 0.06) 0%, transparent 50%);
+    radial-gradient(ellipse at 20% 50%, var(--gen-palette-mid, #3b82f6) 0%, transparent 60%),
+    radial-gradient(ellipse at 80% 20%, var(--gen-palette-fg, #60a5fa) 0%, transparent 50%);
+  opacity: 0.11;
 }
 
 /* ── Glowing status dots (from Generative Cockpit's StatusDot) ── */
@@ -138,12 +139,12 @@
 }
 .evo-modal-content {
   background: rgba(10, 14, 26, 0.98);
-  border: 1px solid rgba(59, 130, 246, 0.2);
+  border: 1px solid var(--gen-palette-mid, rgba(59, 130, 246, 0.2));
   border-radius: 12px;
   padding: 1.5rem;
   max-width: 820px;
   width: 100%;
-  box-shadow: 0 0 40px rgba(59, 130, 246, 0.12);
+  box-shadow: 0 0 40px var(--gen-palette-mid, rgba(59, 130, 246, 0.12));
 }
 
 /* ── p5.js canvas loading placeholder ── */
@@ -151,4 +152,11 @@
   display: block;
   width: 100% !important;
   height: auto !important;
+}
+
+/* ── Generative canvas in header-banner slot ── */
+#evo-gen-canvas canvas {
+  display: block;
+  width: 100% !important;
+  height: 100% !important;
 }

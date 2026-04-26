@@ -8,7 +8,7 @@
     "path": "/evolution-hub",
     "position": "after:skills"
   },
-  "slots": ["sidebar"],
+  "slots": ["sidebar", "header-banner"],
   "entry": "dist/index.js",
   "style": "dist/style.css",
   "api": "plugin_api.py"

@@ -1,2 +1,5 @@
-{"phase": "start", "skill": "telemetry-pipeline-health", "model": "openai/nvidia-proxy/nvidia/nemotron-3-super-120b-a12b", "auto_mode": "heavy", "_ts": "2026-04-26T14:16:53.855628Z", "_elapsed": 0.0}
-{"phase": "skill_loaded", "name": "telemetry-pipeline-health", "size": 4751, "_ts": "2026-04-26T14:16:53.873524Z", "_elapsed": 0.02}
+{"phase": "start", "skill": "telemetry-pipeline-health", "model": "openai/deepseek-proxy/deepseek-v4-flash", "auto_mode": "light", "_ts": "2026-04-26T14:49:10.854961Z", "_elapsed": 0.0}
+{"phase": "skill_loaded", "name": "telemetry-pipeline-health", "size": 4751, "_ts": "2026-04-26T14:49:10.860243Z", "_elapsed": 0.01}
+{"phase": "dataset_ready", "train": 9, "val": 4, "holdout": 6, "_ts": "2026-04-26T14:49:10.952509Z", "_elapsed": 0.1}
+{"phase": "constraints_checked", "passed": true, "checks": [{"name": "size_limit", "passed": true}, {"name": "non_empty", "passed": true}, {"name": "skill_structure", "passed": true}], "_ts": "2026-04-26T14:49:10.953303Z", "_elapsed": 0.1}
+{"phase": "optimization_start", "trials_planned": 10, "_ts": "2026-04-26T14:49:10.954121Z", "_elapsed": 0.1}
