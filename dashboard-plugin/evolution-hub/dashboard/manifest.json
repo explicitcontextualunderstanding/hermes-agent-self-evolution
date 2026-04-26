@@ -1,0 +1,14 @@
+{
+  "name": "evolution-hub",
+  "label": "Evolution Hub",
+  "description": "Monitor and control the self-evolution batch pipeline — queue status, health, logs, and controls",
+  "icon": "Zap",
+  "version": "1.0.0",
+  "tab": {
+    "path": "/evolution-hub",
+    "position": "after:skills"
+  },
+  "slots": ["sidebar"],
+  "entry": "dist/index.js",
+  "api": "plugin_api.py"
+}
