@@ -109,26 +109,44 @@ def skill_fitness_metric(example, prediction, trace=None, pred_name=None, pred_t
 
     This is what gets passed to dspy.GEPA(metric=...).
     Returns a float 0-1 score.
+
+    If skill_text is available on the example (attached during dataset
+    construction), uses LLMJudge for multi-dimensional scoring. Falls
+    back to keyword overlap heuristic if skill_text is missing.
     """
     # The prediction should have an 'output' field with the agent's response
     agent_output = getattr(prediction, "output", "") or ""
     expected = getattr(example, "expected_behavior", "") or ""
     task = getattr(example, "task_input", "") or ""
+    skill_text = getattr(example, "skill_text", "") or ""
 
     if not agent_output.strip():
         return 0.0
+
+    # If skill_text is available, use LLMJudge for richer evaluation
+    # This includes TACTICAL.md content for evaluating tactical adherence
+    if skill_text:
+        try:
+            from evolution.core.config import EvolutionConfig
+            config = EvolutionConfig()
+            judge = LLMJudge(config)
+            score = judge.score(
+                task_input=task,
+                expected_behavior=expected,
+                agent_output=agent_output,
+                skill_text=skill_text,
+            )
+            return score.composite
+        except Exception:
+            pass  # Fall through to heuristic on failure
 
     # Quick heuristic scoring (for speed during optimization)
     # Full LLM-as-judge scoring is expensive — use it selectively
     score = 0.5  # Base score for non-empty output
 
-    # Check if key phrases from expected behavior appear
-    expected_lower = expected.lower()
-    output_lower = agent_output.lower()
-
     # Simple keyword overlap as a fast proxy
-    expected_words = set(expected_lower.split())
-    output_words = set(output_lower.split())
+    expected_words = set(expected.lower().split())
+    output_words = set(agent_output.lower().split())
     if expected_words:
         overlap = len(expected_words & output_words) / len(expected_words)
         score = 0.3 + (0.7 * overlap)

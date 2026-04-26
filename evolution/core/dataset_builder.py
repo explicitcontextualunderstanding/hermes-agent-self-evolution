@@ -74,13 +74,21 @@ class EvalDataset:
                 setattr(dataset, split_name, examples)
         return dataset
 
-    def to_dspy_examples(self, split: str = "train") -> list[dspy.Example]:
-        """Convert a split to DSPy Example objects."""
+    def to_dspy_examples(self, split: str = "train", skill_text: str = "") -> list[dspy.Example]:
+        """Convert a split to DSPy Example objects.
+
+        Args:
+            split: One of "train", "val", "holdout".
+            skill_text: Full skill body (including TACTICAL.md) to attach to
+                each example so the metric function can evaluate tactical adherence.
+                Passed from load_skill()["body"] in evolve_skill.py.
+        """
         data = getattr(self, split)
         return [
             dspy.Example(
                 task_input=ex.task_input,
                 expected_behavior=ex.expected_behavior,
+                skill_text=skill_text,
             ).with_inputs("task_input")
             for ex in data
         ]

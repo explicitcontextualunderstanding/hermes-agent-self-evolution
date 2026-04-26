@@ -231,8 +231,9 @@ def evolve(
     baseline_module = SkillModule(skill["body"])
 
     # Prepare DSPy examples
-    trainset = dataset.to_dspy_examples("train")
-    valset = dataset.to_dspy_examples("val")
+    skill_body = skill["body"]
+    trainset = dataset.to_dspy_examples("train", skill_text=skill_body)
+    valset = dataset.to_dspy_examples("val", skill_text=skill_body)
 
     # ── 5. Run GEPA optimization ────────────────────────────────────────
     console.print(f"\n[bold cyan]Running GEPA optimization ({iterations} iterations)...[/bold cyan]\n")
@@ -350,7 +351,7 @@ def evolve(
     # ── 8. Evaluate on holdout set ──────────────────────────────────────
     console.print(f"\n[bold]Evaluating on holdout set ({len(dataset.holdout)} examples)[/bold]")
 
-    holdout_examples = dataset.to_dspy_examples("holdout")
+    holdout_examples = dataset.to_dspy_examples("holdout", skill_text=skill_body)
 
     baseline_scores = []
     evolved_scores = []
