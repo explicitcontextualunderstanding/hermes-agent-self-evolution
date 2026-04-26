@@ -7,6 +7,7 @@ Zero external dependencies — stdlib only (json, subprocess, pathlib, asyncio).
 
 import asyncio
 import json
+import random
 import re
 import subprocess
 import time
@@ -125,11 +126,141 @@ def _write_audit_entry(entry: dict):
         pass  # Non-fatal — audit logging should never block the user
 
 
+# ── Mock Data Generator ────────────────────────────────────────────────
+
+_skill_names = [
+    "1password-connect", "1password_connect_claude", "1password_connect_operator",
+    "adversarial-review", "applying-karpathy-guidelines", "brev-cli",
+    "building-rs-humble", "cloudflared-tunnels", "code-graph-embedding-pipeline",
+    "coding-standards", "composing-diagnostic-wrappers", "container-compose-config-drift",
+    "creating-updating-plans", "debugging-isaac-ros-containers",
+    "diagnosing-proxy-token-bans", "evaluating-new-models", "honcho-cli",
+    "honcho-dreaming", "honcho-session-ingestion", "managing-agents",
+    "managing-code-graph", "managing-container-registry", "managing-github-actions-runners",
+    "managing-hermes-honcho-containers", "managing-hermes-sidecars", "managing-k3s-cluster",
+    "managing-mcp-configuration", "managing-model-providers",
+    "managing-pre-commit-linter-feedback", "proxy-telemetry-health",
+    "running-container-compose-tests", "running-isaac-ros-tests",
+    "s3-multi-machine-parallel-transfer", "s3-server-side-copy",
+    "s3-stream-copy", "sentinel", "skill-creator",
+    "socket-relay-architecture", "telemetry-pipeline-health", "test-driven-dev",
+    "testing-vlm", "using-apple-secrets", "using-code-graph", "vslam-debugging",
+]
+
+_models = [
+    "openai/nvidia-proxy/minimaxai/minimax-m2.5",
+    "openai/nvidia-proxy/deepseek-ai/deepseek-v3.2",
+    "openai/nvidia-proxy/meta/llama-3.3-70b-instruct",
+]
+
+
+def _generate_mock_rotation_state() -> dict:
+    """Generate a realistic mock rotation state with all 44 skills in varied states."""
+    import random
+    random.seed(42)
+    now = datetime.now(timezone.utc)
+    skills = {}
+    statuses = (
+        ["running"] * 3 +
+        ["no_improvement"] * 10 +
+        ["failed"] * 3 +
+        ["pending"] * 28
+    )
+    random.shuffle(statuses)
+
+    for i, name in enumerate(_skill_names):
+        status = statuses[i] if i < len(statuses) else "pending"
+        entry = {
+            "status": status,
+            "size_kb": round(random.uniform(1.0, 105.0), 2),
+        }
+        if status in ("no_improvement", "failed", "running"):
+            mins_ago = random.randint(1, 180)
+            entry["last_evolved"] = (
+                now - __import__("datetime").timedelta(minutes=mins_ago)
+            ).strftime("%Y-%m-%dT%H:%M:%S.%fZ")
+            entry["model"] = random.choice(_models)
+            entry["last_model_index"] = 0
+        if status == "no_improvement":
+            entry["improvement"] = round(random.uniform(-0.03, 0.18), 4)
+        if status == "failed":
+            entry["improvement"] = None
+            entry["error"] = random.choice([
+                "Watchdog killed: stalled at optimization_start (>800s)",
+                "All 6 models failed. Last: 401 Unauthorized",
+                "RuntimeError: MIPROv2 trial crashed after 300s",
+            ])
+        skills[name] = entry
+
+    return {
+        "skills": skills,
+        "current_skill": random.choice([s for s in _skill_names if statuses[_skill_names.index(s)] == "running"]),
+        "model_order": _models,
+    }
+
+
+def _generate_mock_health() -> dict:
+    """Generate a realistic mock health heartbeat."""
+    return {
+        "last_heartbeat": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%fZ"),
+        "current_skill": random.choice([s for s in _skill_names]),
+        "batch_pid": random.randint(10000, 99999),
+        "status": "running",
+        "loop_step": random.choice([
+            "starting next skill", "running MIPROv2 trial 3/10",
+            "evaluating candidates", "preflight check passed",
+        ]),
+    }
+
+
+_mock_mode = False
+
+
+def _accepts_mock(params) -> bool:
+    """Check if mock mode is requested (query param or server flag)."""
+    if _mock_mode:
+        return True
+    mock_val = params.get("mock")
+    if mock_val is not None:
+        return mock_val.lower() in ("true", "1", "yes")
+    return False
+
+
 # ── Endpoints ───────────────────────────────────────────────────────────
 
+
+@router.get("/mock")
+async def mock_toggle(enable: str = None):
+    """Enable or disable mock data mode.
+
+    GET /api/plugins/evolution-hub/mock?enable=true   — enable mock data
+    GET /api/plugins/evolution-hub/mock?enable=false  — disable mock data
+    GET /api/plugins/evolution-hub/mock               — return current state
+    """
+    global _mock_mode
+    if enable is not None:
+        _mock_mode = enable.lower() in ("true", "1", "yes")
+    return {"ok": True, "mock_mode": _mock_mode}
+
 @router.get("/batch-health")
-async def batch_health():
-    """Return the current batch health heartbeat."""
+async def batch_health(mock: str = None):
+    """Return the current batch health heartbeat.
+
+    Enable mock mode via POST /mock/enable for synthetic data."""
+    if mock and mock.lower() in ("true", "1", "yes") or _mock_mode:
+        import random
+        hb = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%fZ")
+        return {
+            "status": "running",
+            "last_heartbeat": hb,
+            "current_skill": random.choice(_skill_names),
+            "batch_pid": random.randint(10000, 99999),
+            "loop_step": random.choice([
+                "starting next skill", "running MIPROv2 trial 3/10",
+                "evaluating candidates", "preflight check passed",
+            ]),
+            "stale": False,
+        }
     data = _read_json(HEALTH_FILE)
     if data is None:
         return {
@@ -166,9 +297,14 @@ async def batch_health():
 
 
 @router.get("/queue-status")
-async def queue_status():
-    """Return the full evolution queue with per-skill status, size, and model info."""
-    data = _read_json(ROTATION_STATE_FILE)
+async def queue_status(mock: str = None):
+    """Return the full evolution queue with per-skill status, size, and model info.
+
+    Enable mock mode via POST /mock/enable for synthetic data."""
+    if mock and mock.lower() in ("true", "1", "yes") or _mock_mode:
+        data = _generate_mock_rotation_state()
+    else:
+        data = _read_json(ROTATION_STATE_FILE)
     if data is None:
         return {
             "skills": [],
