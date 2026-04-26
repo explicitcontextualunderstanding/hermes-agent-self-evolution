@@ -1,7 +1,7 @@
 ---
 name: hermes-agent-self-evolution
 description: Evolve and optimize Hermes Agent skills, tool descriptions, system prompts, and code using DSPy + GEPA (Genetic-Pareto Prompt Evolution). No GPU required — operates via API calls.
-version: 1.0.0
+version: 1.1.0
 author: Nous Research
 category: software-development
 ---
@@ -12,36 +12,174 @@ Evolutionary self-improvement for Hermes Agent using DSPy + GEPA.
 
 ## Prerequisites
 
-- Python 3.10+
-- uv installed
-- Hermes Agent repo available locally (default ~/.hermes/hermes-agent)
+- Python 3.14 (via uv — NOT system python3 [3.9.6])
+- uv installed (`/opt/homebrew/bin/uv`)
+- Hermes Agent repo at `~/.hermes/hermes-agent`
 
 ## Setup
 
+Use `uv run --no-project --python python3.14` to avoid the broken `pyproject.toml` dependency (`darwinian-evolver` doesn't exist in any registry).
+
 ```bash
 cd /Users/kieranlal/workspace/hermes-agent-self-evolution
-uv pip install -e ".[dev]"
-export HERMES_AGENT_REPO=~/.hermes/hermes-agent
+export HERMES_AGENT_REPO=/Users/kieranlal/.hermes/hermes-agent
+uv run --no-project --python python3.14 python3 -m evolution.skills.evolve_skill --dry-run
 ```
 
 **Path notes:**
-- `uv` may be at `/opt/homebrew/bin/uv` if not on PATH
-- The venv used by Hermes is at `/Users/kieranlal/workspace/.venv/bin/python3`
-- System `python` does not exist — use `python3`
+- `uv` is at `/opt/homebrew/bin/uv` — Hermes' sandboxed PATH may not include it
+- `.python-version` files exist in `isaac_ros_custom`, `nano2`, ops wiki — all pin `3.14`
+- `uv` already manages Python 3.14.4 — no download needed
+- System `/usr/bin/python3` is **3.9.6** — do not use it
 
-**Commit-then-modify workflow:**
-Before patching evolution code or creating datasets, commit the baseline to git so others can diff the original vs revised:
-```bash
-git add evolution/skills/skill_module.py
-git commit -m "Load full skill directory corpus, not just SKILL.md"
+## Current Operational State (2026-04-25)
+
+**Status:** Batch evolution running (PID 99454), 1 skill completed (`coding-standards`), 1 skill active (`test-driven-dev`), 42 pending. Rotation order: size-sorted ascending (1.0 KB → 103 KB).
+
+### Confirmed Working Models
+
+| Model | Via | Status | Notes |
+|-------|-----|--------|-------|
+| `openai/nvidia-proxy/minimaxai/minimax-m2.5` | kilo-proxy | ✅ Primary | Fastest (5-10s/call), reliable JSON Schema support, handles up to 100KB skills |
+| `openai/nvidia-proxy/deepseek-ai/deepseek-v3.2` | kilo-proxy | ✅ Tier 1 | Strong reasoning, any size, works through existing NVIDIA tokens |
+| `gemini-2.0-flash` | direct Google API | ✅ Tier 1 | Bypasses degraded google-proxy; requires `GOOGLE_API_KEY` |
+| `openai/nvidia-proxy/meta/llama-3.1-405b-instruct` | kilo-proxy | ✅ Tier 2 | Slow (20-45s/call) but strongest, any size |
+| `openai/nvidia-proxy/moonshotai/kimi-k2.5` | kilo-proxy | ✅ Tier 2 | Medium speed, good eval quality |
+| `openai/nvidia-proxy/nvidia/nemotron-3-super-120b-a12b` | kilo-proxy | ⚠️ Tier 2 | Can return 404 if model delisted from NIM catalog |
+
+### Disabled / Unavailable Models
+
+| Model | Reason | Workaround |
+|-------|--------|------------|
+| `openai/google-proxy/gemma-4-26b-a4b-it` | Google-proxy degraded: 503 on all structured output requests (2026-04-24) | Use direct `gemini-2.0-flash` instead |
+| `openai/google-proxy/gemma-4-31b-it` | Google-proxy degraded (same as above) | — |
+| `openai/deepseek-proxy/deepseek-v4*` | Token not yet retrieved from 1Password Connect on nano2 | Use `deepseek-v3.2` via nvidia-proxy for now |
+| `@cf/*` (Cloudflare) | Does not support JSON Schema structured output required by DSPy | Excluded from rotation |
+| `openai/google-proxy/gemini-2.0-flash-lite` | Google-proxy degraded | Use direct `gemini-2.0-flash` |
+
+### Actual Batch Configuration in Use
+
+**Batch orchestrator:** `~/workspace/nano2/scripts/evolve_batch_size_aware.sh`
+- Uses venv Python: `/Users/kieranlal/workspace/hermes-agent-self-evolution/.venv/bin/python3`
+- Exports `HERMES_AGENT_REPO` explicitly so workers locate skills
+- Traps `EXIT`/`INT` → `pkill -f evolve_skill_rotation.py` for clean shutdown
+- Sleeps 30s between skills
+- Log: `~/.hermes/skills/.wrappers/batch_size_aware.log`
+
+**Rotation script:** `~/workspace/nano2/scripts/evolve_skill_rotation.py` (809 lines)
+- Size-sorted rotation (ascending)
+- Size-aware timeouts: small (<10KB) → attempt 1200s / stall 400s; medium (10-100KB) → 1800s / 600s; large (>100KB) → 3600s / 1200s
+- Phase-aware watchdog grace: `optimization_start` gets 2× base grace to accommodate MIPROv2 bootstrap
+- Model rotation: each skill tracks `last_model_index`, cycles through eligible model list
+- Cross-provider fallback: tries all NVIDIA models first, then direct models if all fail
+
+**Socket timeouts (hardened, set before DSPy import):**
+```python
+socket.setdefaulttimeout(45)  # any socket operation
+requests timeout: (30, 120)   # (connect, read)
 ```
-This preserves rollback capability and makes the diff reviewable.
+
+**Models in `MODEL_LIST` (working configuration):**
+```python
+[
+    # Tier 1: primary workhorses
+    {"id": "openai/nvidia-proxy/minimaxai/minimax-m2.5", "provider": "nvidia", "available": True, "max_size_kb": 100},
+    {"id": "openai/nvidia-proxy/deepseek-ai/deepseek-v3.2", "provider": "direct", "available": True, "max_size_kb": float('inf')},
+    {"id": "gemini-2.0-flash", "provider": "direct", "available": True, "max_size_kb": float('inf')},
+    # Tier 2: capacity (some may be offline)
+    {"id": "openai/nvidia-proxy/nvidia/nemotron-3-super-120b-a12b", "provider": "nvidia", "available": True, "max_size_kb": 100},
+    {"id": "openai/nvidia-proxy/meta/llama-3.1-405b-instruct", "provider": "nvidia", "available": True, "max_size_kb": float('inf')},
+    {"id": "openai/nvidia-proxy/moonshotai/kimi-k2.5", "provider": "nvidia", "available": True, "max_size_kb": 100},
+    # Disabled: google-proxy models (503 degraded), deepseek-v4 (token missing), cloudflare (no json_schema)
+]
+```
+
+### Key Lessons from 2026-04-25 Batch Run
+
+1. **Model ID format is non-negotiable:** All model IDs must use `openai/<provider>/<model>` format. Without the `openai/` prefix, litellm routes to native provider SDKs and completely bypasses kilo-proxy, causing "Unknown provider" or direct-API auth failures. **Verify with DSPy, not just curl.**
+
+2. **Google-proxy is degraded on structured output** (503 BAD_REQUEST for all `response_format` requests). This is a provider-level capability outage, not a token issue. All `google-proxy/*` models are **disabled** in rotation until the proxy recovers. Use direct `gemini-2.0-flash` via Google's OpenAI-compatible endpoint instead.
+
+3. **DeepSeek V3.2 works via nvidia-proxy** — no separate `deepseek-proxy` token needed. This provides large-skill coverage immediately. V4 models remain disabled pending 1Password Connect retrieval on nano2.
+
+4. **Size-aware timeouts prevent false kills:** A flat 90s timeout killed `managing-hermes-honcho-containers` (102KB) at 96s while minimax was actively bootstrapping. The new tiered timeouts (1200/400 for small, 1800/600 for medium, 3600/1200 for large) allow large skills to complete.
+
+5. **Process hygiene matters:** Batch restarts left orphaned workers (PIDs 16429, 14380, 18748). The `pkill -f` pattern in the stop handler and trap on EXIT/INT now ensure clean shutdowns. Always use `bash evolve_batch_size_aware.sh stop` before killing the batch.
+
+6. **Progress file is ground truth:** The rotation state file can show `"running"` while the process is actually dead (zombie). Always cross-check `progress.jsonl` timestamps and `pgrep` before trusting status.
+
+7. **socket.setdefaulttimeout + requests patch required** before DSPy import, or a hung endpoint blocks forever. The rotation script sets these at module top-level.
+
+8. **GEPA now works (fixed 2026-04-25)** — Two bugs were fixed: (a) `max_steps` parameter doesn't exist in DSPy 3.2.0 GEPA — should be `max_full_evals`. (b) `skill_fitness_metric()` in `fitness.py` must accept 5 positional args `(example, prediction, trace, pred_name, pred_trace)` instead of 3. GEPA is now the primary optimizer; verification: logs show "Configuring GEPA..." not "Falling back to MIPROv2".
+
+9. **Separate eval model impractical** — All attempts to use a stronger model for evaluation failed: DeepSeek V4 (11 consecutive failures), Gemini (no json_schema), Hermes 4 (litellm routing strips prefix). Proven approach: use same model for optimizer and eval.
+
+10. **DeepSeek V4 model names** — API returns `deepseek-v4-flash` and `deepseek-v4-pro`, NOT plain `deepseek-v4`. The plain name fails with "model not found". Correct in rotation script.
+
+11. **Model reliability ladder must be seeded** — Without historical seeding, all models start at uniform 0.50 and workers waste rounds exploring. Seed from historical data: minimax (11 attempts, 6 successes → 0.65), nemotron (3 attempts, 2 successes → 0.50).
+
+12. **Epsilon-greedy tuned to 10%** — Starting at 20% meant ~1.6 of 8 workers wasted on random selection. Reduced to 10% after removing unreliable models (Gemini, Hermes 4). With 8 workers, 7.2 exploit proven models.
+
+13. **State corruption requires wrapper-file-aware recovery** — When workers are killed, "running" entries persist in rotation_state.json. Reset logic must check for completed `.json` wrapper files in WRAPPERS_DIR and restore those as `completed`/`no_improvement`, falling back to `pending` for skills without wrappers.
+
+### Quick Commands
+
+```bash
+# Check batch health
+tail -20 ~/.hermes/skills/.wrappers/batch_size_aware.log
+watch -n 30 "jq '.skills | to_entries[] | select(.value.status != \"pending\")' ~/.hermes/skills/.wrappers/.rotation_state.json"
+
+# Force-reset all to pending (if needed)
+python3 -c "import json,pathlib; p=pathlib.Path('~/.hermes/skills/.wrappers/.rotation_state.json'); d=json.loads(p.read_text()); [s.update({'status':'pending','error':None}) for s in d['skills'].values()]; p.write_text(json.dumps(d,indent=2))"
+
+# Stop batch cleanly
+bash ~/workspace/nano2/scripts/evolve_batch_size_aware.sh stop
+```
+
+## Tiered Model Routing (Critical)
+
+Route each skill to the cheapest model that can handle its size. Prevents model thrashing:
+
+**Why Google direct (not proxy):** The kilo-proxy `google-proxy` provider is degraded on structured output. Google's own OpenAI-compatible endpoint works fine — route small skills there directly.
+
+**Easy button — use the wrapper (handles all routing):**
+
+```bash
+~/bin/evolve-skill.sh                          # next skill in rotation
+~/bin/evolve-skill.sh --skill honcho-cli       # specific skill
+~/bin/evolve-skill.sh --status                 # status of all 44 skills
+~/bin/evolve-skill.sh --force --skill X        # re-evolve
+```
+
+The wrapper measures skill size, sets OPENAI_BASE_URL per tier, passes --model to rotation script. On Google failure, falls back to NVIDIA.
 
 **Token pool:**
 - 5 Google AIStudio tokens (`gemma_1.txt`–`gemma_5.txt`) via `google-proxy` — default for fast iteration
-- 5 NVIDIA NIM tokens (`nvidia_1.txt`–`nvidia_5.txt`) via `nvidia-proxy` — unused by default evolution pipeline
-- Only `google-proxy/gemma-4-31b-it` is used unless you explicitly pass `--optimizer-model` / `--eval-model`
+- 5 NVIDIA NIM tokens (`nvidia_1.txt`–`nvidia_5.txt`) via `nvidia-proxy` — fallback for stronger reasoning
+- 1 Cloudflare Workers AI token via `cloudflare-proxy` — **NOT usable for DSPy MIPROv2** (see below)
 - The proxy auto-rotates on 429s; no manual token management needed
+
+**kilo-proxy health endpoint (built-in diagnostics):**
+```bash
+# Show all providers, tokens, current active token, degradation status
+curl -s http://localhost:8080/ | python3 -m json.tool
+
+# List available models per provider
+curl -s http://localhost:8080/v1/models
+
+# Active upstream probe (cached 30s)
+curl -s http://localhost:8080/health/upstream
+
+# Reload tokens from disk without restart
+curl -s -X POST http://localhost:8080/tokens/reload
+
+# Sync from 1Password enclave then reload
+curl -s -X POST http://localhost:8080/tokens/refresh
+```
+
+**Log files:**
+- `~/.local/share/kilo/log/token-rotation.log` (stdout — shows rotation decisions per request)
+- `~/.local/share/kilo/log/proxy-launchd.err` (stderr — shows startup errors and panics)
 
 ## Usage
 
@@ -122,13 +260,31 @@ With only 3 validation examples (MIPROv2 `light` default), the optimizer overfit
 
 The "improvement" on validation does not generalize. Minimum viable val set: **10+ examples**. Recommended: 25+.
 
-### GEPA Is Non-Functional; MIPROv2 Is the Only Working Optimizer
+### GEPA Fixed (2026-04-25) — Now Working, Was Non-Functional
 
-GEPA fails immediately:
+Two bugs prevented GEPA from working in DSPy 3.2.0:
+
+1. **Wrong parameter name:** `max_steps` doesn't exist — should be `max_full_evals`. Fixed in `evolution/skills/evolve_skill.py` line 251.
+
+2. **Metric signature too narrow:** `skill_fitness_metric()` accepted only 3 args `(example, prediction, trace)` but DSPy 3.2.0 GEPA calls it with **5 positional args**: `(example, prediction, trace, pred_name, pred_trace)`. Fixed in `evolution/core/fitness.py`.
+
+**Verify GEPA is active:** Check logs for `"Configuring GEPA..."` — if you see `"Falling back to MIPROv2"` after both fixes are applied, the metric signature is still wrong.
+
+**Eval model constraint:** All attempts to use a separate/stronger model for evaluation failed:
+- DeepSeek V4: 11 consecutive failures through deepseek-proxy
+- Gemini models: no `json_schema` support required by DSPy
+- Nous Hermes 4: litellm strips `nousresearch/` prefix, routes to wrong endpoint
+
+**Proven approach:** Use the same model for both optimizer and eval. This was the original working configuration that produced the +0.051 best score improvement.
+
+**Model reliability ladder seeding:** Instead of starting all models at uniform 0.50 reliability (wasting rounds on exploration), seed from historical data:
+```python
+model_stats = {
+    "minimax-m2.5": {"attempts": 11, "successes": 6, "reliability": 0.65},
+    "nemotron":    {"attempts": 3,  "successes": 2, "reliability": 0.50},
+}
 ```
-GEPA.__init__() got an unexpected keyword argument 'max_steps'
-```
-The code auto-falls back to MIPROv2. This is the only working optimizer path. Do not attempt to fix GEPA — the fallback is hardcoded and reliable.
+Seeded in `rotation_state.json` before batch launch.
 
 **Modules referenced in PLAN.md but NOT built:**
 - `evolution/core/benchmark_gate.py` — does not exist
@@ -198,28 +354,11 @@ evolution/
 
 ## Running Phase 1
 
-### Option A: Through kilo-proxy with Google AIStudio (fastest — recommended for testing)
-
-The kilo-proxy at `localhost:8080` manages 5 Google AIStudio tokens with auto-rotation. Google gemma-4-31b-it is ~10x faster than NVIDIA endpoints.
+### Option A: Through kilo-proxy with Google AIStudio
 
 ```bash
-# 1. Ensure proxy is running and has google-proxy tokens
-bash ~/workspace/nano2/scripts/restart-kilo-proxy.sh
-
-# 2. Verify google-proxy tokens loaded
-python3 -c "
-import urllib.request, json
-req = urllib.request.Request('http://localhost:8080')
-with urllib.request.urlopen(req) as resp:
-    d = json.loads(resp.read())
-    for k, v in d['providers'].items():
-        if v.get('tokens', 0) > 0:
-            print(f'{k}: {v[\"tokens\"]} tokens')
-"
-
-# 3. Run evolution through the proxy
 export OPENAI_BASE_URL="http://localhost:8080/v1"
-export OPENAI_API_KEY="dummy"  # proxy ignores this, uses enclave tokens
+export OPENAI_API_KEY="dummy"
 export HERMES_AGENT_REPO=/Users/kieranlal/.hermes/hermes-agent
 
 cd /Users/kieranlal/workspace/hermes-agent-self-evolution
@@ -228,13 +367,11 @@ python3 -m evolution.skills.evolve_skill \
     --iterations 1 \
     --eval-source golden \
     --dataset-path datasets/skills/github-code-review \
-    --optimizer-model "openai/google-proxy/gemma-4-31b-it" \
-    --eval-model "openai/google-proxy/gemma-4-31b-it"
+    --optimizer-model "gemini-2.0-flash" \
+    --eval-model "gemini-2.0-flash"
 ```
 
 ### Option B: Through kilo-proxy with NVIDIA NIM (slower, stronger reasoning)
-
-Same proxy, but routes through NVIDIA NIM endpoints. Use this when you need the strongest reasoning from 405B or long-context evaluation from Kimi.
 
 ```bash
 export OPENAI_BASE_URL="http://localhost:8080/v1"
@@ -245,34 +382,89 @@ cd /Users/kieranlal/workspace/hermes-agent-self-evolution
 python3 -m evolution.skills.evolve_skill \
     --skill github-code-review \
     --iterations 10 \
-    --optimizer-model "openai/nvidia-proxy/meta/llama-3.1-405b-instruct" \
-    --eval-model "openai/nvidia-proxy/moonshotai/kimi-k2.5"
+    --optimizer-model "minimaxai/minimax-m2.5" \
+    --eval-model "moonshotai/kimi-k2.5"
 ```
 
-**CRITICAL: Model names must use `openai/` prefix.**
+**⚠️ CORRECTION (2026-04-24): DSPy/litellm REQUIRES the `openai/` prefix — curl tests do NOT.**
 
-litellm requires the provider prefix when using a custom `OPENAI_BASE_URL`. Pass `openai/nvidia-proxy/MODEL` not just `nvidia-proxy/MODEL`. Without this prefix you get:
+This was the most hard-won lesson of the evolution pipeline. There are TWO different behaviors depending on how you call the proxy:
+
+### DSPy/litellm (via OPENAI_BASE_URL): `openai/nvidia-proxy/...` IS CORRECT
+
+When `OPENAI_BASE_URL=http://localhost:8080/v1` is set, DSPy/litellm sees the `openai/` prefix and routes through the custom base URL. **Before sending to the proxy, litellm strips `openai/`.** So the proxy receives a model name it recognizes:
+
 ```
-BadRequestError: LLM Provider NOT provided. You passed model=nvidia-proxy/...
+DSPy sends:       openai/nvidia-proxy/minimaxai/minimax-m2.5
+litellm strips:   openai/
+Proxy receives:   nvidia-proxy/minimaxai/minimax-m2.5    ✓ routeable
 ```
 
-**Latency by provider:**
-- `google-proxy/gemma-4-26b-a4b-it` — ~3-5s per call, 5 free AIStudio tokens (more reliable than 31b)
-- `google-proxy/gemma-4-31b-it` — ~3-5s per call, same tokens, but can go completely offline (HTTP 500 then all tokens timeout)
-- `nvidia-proxy/meta/llama-3.1-405b-instruct` — ~20-45s per call, 5 NIM tokens
-- `nvidia-proxy/moonshotai/kimi-k2.5` — ~15-25s per call
-- `nvidia-proxy/minimaxai/minimax-m2.5` — ~5-10s per call, most reliable NVIDIA model
-- `nvidia-proxy/nvidia/nemotron-3-super-120b-a12b` — ~10-15s per call, but can return 404 when model is delisted
+**Verified working model IDs (tested 2026-04-24 through dspy.LM + dspy.Predict):**
+```python
+import dspy
+lm = dspy.LM('openai/nvidia-proxy/minimaxai/minimax-m2.5')
+dspy.configure(lm=lm)
+class T(dspy.Signature): msg: str = dspy.OutputField()
+result = dspy.Predict(T)()
+# → SUCCESS
+```
+
+### Direct curl (bypassing litellm): NO `openai/` prefix
+
+Curl sends the model AS-IS in the POST body. The proxy does NOT recognize `openai/` prefix:
+
+```bash
+# WRONG for curl:
+curl ... -d '{"model": "openai/nvidia-proxy/minimaxai/minimax-m2.5"}'
+# → "Unknown provider for model 'openai/nvidia-proxy/minimaxai/minimax-m2.5'"
+
+# CORRECT for curl:
+curl ... -d '{"model": "nvidia-proxy/minimaxai/minimax-m2.5"}'
+# → OK — proxy matches nvidia-proxy prefix
+```
+
+### Why this is confusing
+
+The NATURAL debugging path that leads to the wrong conclusion: "model X doesn't work → test it with curl → curl says 'Unknown provider' → strip the prefix → curl works → update the code to use bare names → code breaks."
+
+**Always verify model IDs through DSPy, not just curl.**
+
+### Google models FAIL even with `openai/` prefix
+
+`openai/google-proxy/gemma-4-26b-a4b-it` is NOT a valid DSPy model ID. Even though litellm strips `openai/` and sends `google-proxy/gemma-4-26b-a4b-it` to the proxy, litellm's internal model detection recognizes `gemma-4-26b-a4b-it` as a Google model and tries to route through Vertex AI — which crashes without `google-cloud-aiplatform` installed.
+
+Use only NVIDIA-routed models with `openai/nvidia-proxy/...` prefix for DSPy MIPROv2.
+
+### DeepSeek models (when proxy is wired)
+
+Use the same pattern:
+```bash
+openai/deepseek-proxy/deepseek-v4
+# litellm strips openai/ → proxy sees deepseek-proxy/deepseek-v4 → routes through deepseek-proxy
+```
+
+**Latency by provider (bare model names, no `openai/` prefix):**
+- `gemma-4-26b-a4b-it` — ~3-5s per call (when google-proxy tokens available)
+- `gemma-4-31b-it` — ~3-5s per call, but can go completely offline (HTTP 500 then all tokens timeout)
+- `meta/llama-3.1-405b-instruct` — ~20-45s per call, 5 NIM tokens
+- `moonshotai/kimi-k2.5` — ~15-25s per call
+- `minimaxai/minimax-m2.5` — ~5-10s per call, most reliable NVIDIA model
+- `nvidia/nemotron-3-super-120b-a12b` — ~10-15s per call, but can return 404 when model is delisted
+- `qwen/qwen3.5-397b-a17b` — ~15-30s per call, massive 397B MoE
 
 For testing and fast iteration, use `google-proxy/gemma-4-26b-a4b-it`. For production optimization with stronger reasoning, use `nvidia-proxy/meta/llama-3.1-405b-instruct`.
 
-**Available models via nvidia-proxy:**
-- `openai/nvidia-proxy/moonshotai/kimi-k2.5`
-- `openai/nvidia-proxy/minimaxai/minimax-m2.5`
-- `openai/nvidia-proxy/nvidia/nemotron-3-super-120b-a12b`
-- `openai/nvidia-proxy/meta/llama-3.1-405b-instruct`
-- `openai/nvidia-proxy/deepseek-ai/deepseek-v3.2`
-- `openai/nvidia-proxy/qwen/qwen3.5-397b-a17b`
+**Available models (via proxy, bare names — no `openai/` prefix):**
+- `moonshotai/kimi-k2.5`
+- `minimaxai/minimax-m2.5`
+- `nvidia/nemotron-3-super-120b-a12b`
+- `meta/llama-3.1-405b-instruct`
+- `deepseek-ai/deepseek-v3.2` (may time out — not reliable for json_schema)
+- `qwen/qwen3.5-397b-a17b`
+- `gemini-2.0-flash` (when google-proxy available)
+- `gemma-4-26b-a4b-it` (<10KB skills only, when google-proxy available)
+- `gemma-4-31b-it` (<10KB skills only, when google-proxy available)
 
 **Why this works:** `dspy.LM()` routes through litellm, which respects `OPENAI_BASE_URL` and `OPENAI_API_KEY`. The proxy presents an OpenAI-compatible API and transparently rotates NVIDIA tokens from `~/.enclave/nvidia_{1..5}.txt`.
 
@@ -379,34 +571,50 @@ Without this, every batch/cron invocation will abort after building the dataset 
 
 **Also observed:** `nvidia-proxy/nvidia/nemotron-3-super-120b-a12b` can return HTTP 404 when the model is temporarily delisted from the NIM catalog.
 
-### Provider-Specific Hangs During Dataset Generation (2026-04-24)
+### Cloudflare Workers AI: Incompatible with DSPy MIPROv2 (2026-04-24)
 
-**NVIDIA `minimaxai/minimax-m2.5` can hang INDEFINITELY on synthetic dataset generation for certain skills.**
+**Cloudflare Workers AI does NOT support complex `json_schema` structured output** required by DSPy MIPROv2. It only supports basic `json_object` (unstructured JSON). MIPROv2 uses JSON Schema for bootstrapping few-shot examples and instruction candidates, which causes `BAD_REQUEST` or `503 degraded` errors.
 
-**Observed with:** `s3-server-side-copy` (12,836 chars, procedural S3 transfer skill)
-**Symptoms:**
-- Process reaches `skill_loaded` phase
-- CPU drops to 0% and stays there
-- `progress.jsonl` shows no new entries for 15+ minutes
-- No error is thrown — the process is stuck in an I/O wait loop
-
-**Diagnostic:**
-```bash
-# Check if process is making progress
-stat -f "%Sm" /Users/kieranlal/workspace/hermes-agent-self-evolution/output/SLUG/progress.jsonl
-# If timestamp hasn't updated in >5 min, it's hung
-
-# Confirm by checking CPU usage
-ps -o pid,etime,time,%cpu,stat -p $(pgrep -f "evolve_skill.*SLUG")
-# 0% CPU + "S" (sleep) state = hung, not slow
+**Observed behavior:**
+```
+[cloudflare-proxy] Response 503 | TTFB: 0.3s | token: cloudflare.txt | model: @cf/meta/llama-3.1-8b-instruct
+[cloudflare-proxy] Degraded: 503 on cloudflare.txt
 ```
 
-**Workaround:** Switch to Google provider for that specific skill:
-```bash
-python3 scripts/evolve_skill_rotation.py --skill s3-server-side-copy --model openai/google-proxy/gemma-4-26b-a4b-it
+**Verdict:** Do not use Cloudflare for the evolution pipeline. Use **Google (5 tokens)** or **NVIDIA (5 tokens)** only.
+
+**Empirically verified token rotation (2026-04-24):**
+- Google: `gemma_4.txt` → `gemma_3.txt` confirmed active after rotation
+- NVIDIA: `nvidia_5.txt` → `nvidia_2.txt` confirmed active after rotation
+- Cloudflare: `cloudflare.txt` loaded but fails on first MIPROv2 structured output call
+
+### Provider-Specific Hangs During Dataset Generation: Minimax Actually Works (2026-04-24)
+
+**CORRECTION:** The earlier diagnosis that "minimax hangs indefinitely" was wrong. The model was actively making progress but was killed by an **aggressive flat timeout** before it could complete.
+
+**Evidence from `managing-hermes-honcho-containers` (102.8KB):**
+```
+Model: minimax-m2.5
+Phase reached: optimization_start
+Progress: Bootstrapped 4 full traces, reached 40% of bootstrapping set 4/6
+Result: Killed by watchdog at 96s (>90s flat timeout)
 ```
 
-**Why this happens:** Unknown — possibly a model-specific parsing issue with the skill's code blocks or the synthetic dataset builder's prompt structure. The minimax-m2.5 tokenizer or completion endpoint may enter a degenerative state on certain prompt patterns. **Not all skills are affected** — `managing-model-providers` (23KB) works fine on the same NVIDIA model.
+Minimax successfully bootstrapped 4 traces for a **102KB skill** in ~80s. The 90s timeout killed it mid-flight. Nemotron-3-super-120b on the SAME skill only reached `skill_loaded` before being killed at 98s — minimax is actually **faster** than nemotron for large context.
+
+**Why this was misdiagnosed:**
+- A flat 90s timeout kills ALL models on large skills equally
+- Minimax reaches later phases before dying, making it *appear* to hang at `optimization_start`
+- Nemotron dies earlier (at `skill_loaded`), so it doesn't trigger the "hangs at later phase" confusion
+
+**Corrected understanding:**
+- Minimax **supports** `response_format` (structured JSON Schema) reliably
+- Minimax is the **fastest** NVIDIA model at inference (~5-10s per call)
+- Minimax does NOT hang on large context; it just needs proportionally more time
+- For small skills (<10KB), minimax completes fully within 90s — that's why we already have wrappers from early runs
+- For large skills, minimax needs the same size-aware timeout as any other model
+
+**The real fix is size-aware timeouts, not model avoidance.** See "Size-Aware Timeouts" below.
 
 ### Watchdog Recovery: Killing Hung Processes with multiprocessing (2026-04-24)
 
@@ -521,6 +729,16 @@ else:
 - `timeout` command is not installed on macOS by default
 - `multiprocessing` is cross-platform and works inside complex Python frameworks
 
+**Stale progress file pitfall:**
+If `progress.jsonl` from a previous failed run is not cleared, the restart-loop detector will count old `"phase": "start"` entries and immediately kill the new process. Always unlink the file before starting a new attempt:
+
+```python
+output_dir = HERMES_REPO / "output" / skill_name
+progress_file = output_dir / "progress.jsonl"
+if progress_file.exists():
+    progress_file.unlink()  # critical: prevents false restart-loop kills
+```
+
 **Tunable parameters:**
 | Parameter | Default | When to adjust |
 |-----------|---------|----------------|
@@ -528,7 +746,7 @@ else:
 | `PROGRESS_STALL_SECONDS` | 300 (5 min) | MIPROv2 bootstrapping can take 2-3 min per set — keep >180s |
 | `MAX_RESTART_LOOPS` | 3 | Lower to 2 for faster failure detection, raise to 5 for flaky providers |
 
-**Status tracking:** The rotation state now records `"hung"` as a distinct status. The `--status` table shows:
+**Status tracking:** The rotation state records `"hung"` as a distinct status (separate from `"failed"`). Both `"failed"` and `"hung"` trigger the model fallback loop. The `--status` table shows:
 ```
 Summary: 42 pending | 1 done | 0 failed | 0 hung | 44 total
 ```
@@ -652,9 +870,11 @@ If BOTH Google models are down, failover to NVIDIA:
 --optimizer-model "openai/nvidia-proxy/minimaxai/minimax-m2.5"
 ```
 
-**Batch rotation script defaults** (as of 2026-04-23):
+**Batch rotation script defaults** (as of 2026-04-24):
 - `google` provider → `gemma-4-26b-a4b-it` (was `gemma-4-31b-it`)
 - `nvidia` provider → `minimaxai/minimax-m2.5` (was `nemotron-3-super-120b-a12b`)
+- **Cloudflare is excluded from rotation** — it does not support DSPy MIPROv2 structured output (see "Cloudflare Workers AI" section above)
+- Provider assignment: even skill index → Google, odd skill index → NVIDIA (`idx % 2`)
 
 Test provider health before a batch run:
 ```bash
@@ -762,7 +982,7 @@ uv pip install optuna -p /Users/kieranlal/workspace/.venv/bin/python3
 
 ### `GEPA.__init__() got an unexpected keyword argument 'max_steps'`
 
-GEPA in the current DSPy version does NOT accept `max_steps`. The code auto-falls back to MIPROv2. This is expected behavior. The fallback path is the only working optimizer in this environment.
+**Update (2026-04-25): This is now FIXED.** The code used `max_steps` but DSPy 3.2.0 GEPA expects `max_full_evals`. See the "GEPA Fixed" section above. If you still see this error, your checkout has stale code — pull from upstream or manually patch `evolution/skills/evolve_skill.py` line 251.
 
 ### gemma-4-31b-it outputs stray `` tags with `ChainOfThought`
 
@@ -959,6 +1179,11 @@ state_file.write_text(json.dumps(state, indent=2))
 PYEOF
 ```
 
+**One-liner zombie reset (no heredoc needed):**
+```bash
+python3 -c "import json, pathlib; p=pathlib.Path('/Users/kieranlal/.hermes/skills/.wrappers/.rotation_state.json'); d=json.loads(p.read_text()); [s.update({'status':'pending','error':'Zombie reset'}) for s in d['skills'].values() if s.get('status')=='running']; p.write_text(json.dumps(d,indent=2))"
+```
+
 **How to run evolution that survives:**
 ```bash
 # Start as Hermes tracked background process from a SAVED turn,
@@ -989,12 +1214,81 @@ cronjob create --name skill-evolution-rotation \
   --prompt "cd /Users/kieranlal/workspace/hermes-agent-self-evolution && \
     HERMES_AGENT_REPO=/Users/kieranlal/.hermes/hermes-agent \
     OPENAI_BASE_URL=http://localhost:8080/v1 \
-    OPENAI_API_KEY=dummy \
+    OPENAI_API_KEY=*** \
     python3 /Users/kieranlal/workspace/nano2/scripts/evolve_skill_rotation.py \
     --auto light --eval-source synthetic"
 ```
 
-**Rule:** For any evolution expected to take >10 minutes, use **cronjob** or **manual background terminal** — never `delegate_task`, never long foreground runs, and never trust a "running" state without verifying the OS process exists.
+### Batch Loop Script: Continuous Evolution Until Complete (2026-04-24)
+
+For evolving many skills (30+), a bash loop that calls the rotation script repeatedly is more efficient than cronjob alone. The loop exits when no pending skills remain.
+
+**Script (`evolve_batch_loop.sh`):**
+```bash
+#!/bin/bash
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ROTATION_SCRIPT="$SCRIPT_DIR/evolve_skill_rotation.py"
+LOG_FILE="/Users/kieranlal/.hermes/skills/.wrappers/batch_loop.log"
+
+export HERMES_AGENT_REPO="/Users/kieranlal/.hermes/hermes-agent"
+export OPENAI_BASE_URL="http://localhost:8080/v1"
+export OPENAI_API_KEY="***"
+export PYTHONPATH="/Users/kieranlal/workspace/hermes-agent-self-evolution:$PYTHONPATH"
+
+cd /Users/kieranlal/workspace/hermes-agent-self-evolution
+
+echo "[batch started at $(date -Iseconds)]" >> "$LOG_FILE"
+
+for i in $(seq 1 40); do
+    # Check if any pending skills remain
+    PENDING=$(python3 -c "
+import json
+from pathlib import Path
+state = json.loads(Path('/Users/kieranlal/.hermes/skills/.wrappers/.rotation_state.json').read_text())
+print(sum(1 for d in state['skills'].values() if d.get('status') == 'pending'))
+" 2>/dev/null || echo "0")
+
+    if [ "$PENDING" -eq 0 ]; then
+        echo "[no pending skills, exiting]" >> "$LOG_FILE"
+        break
+    fi
+
+    python3 "$ROTATION_SCRIPT" --auto light --eval-source synthetic \
+        >> "$LOG_FILE" 2>&1 || true
+    sleep 30
+done
+```
+
+**Launch:**
+```bash
+chmod +x evolve_batch_loop.sh
+# From Hermes Agent — use background=true so it survives context compaction
+terminal(background=true) run: bash /path/to/evolve_batch_loop.sh
+```
+
+**Why this works:** Each iteration is a fresh Python process. If one skill hangs, the watchdog kills it and the loop continues. The loop polls the state file to detect completion.
+
+### Backup Cronjob: Run Only If Idle
+
+A cronjob that acts as a backup — only running when no other evolution is active — provides safety without collision:
+
+```bash
+# Runs every 30 min, but skips if another evolution process exists
+cronjob create --name skill-evolution-backup \
+  --schedule "*/30 * * * *" \
+  --prompt "cd /Users/kieranlal/workspace/hermes-agent-self-evolution && \
+    export HERMES_AGENT_REPO=/Users/kieranlal/.hermes/hermes-agent && \
+    export OPENAI_BASE_URL=http://localhost:8080/v1 && \
+    export OPENAI_API_KEY=*** && \
+    RUNNING=\$(ps aux | grep -E 'evolve_skill_rotation|evolve_batch_loop' | grep -v grep | wc -l | tr -d ' ') && \
+    if [ \"\$RUNNING\" -gt 0 ]; then echo '\$(date -Iseconds) Another evolution running, skipping'; exit 0; fi && \
+    python3 /Users/kieranlal/workspace/nano2/scripts/evolve_skill_rotation.py \
+      --auto light --eval-source synthetic >> /Users/kieranlal/.hermes/skills/.wrappers/cron.log 2>&1"
+```
+
+**Rule:** For any evolution expected to take >10 minutes, use **batch loop + idle-aware cronjob** — never `delegate_task`, never long foreground runs, and never trust a "running" state without verifying the OS process exists.
 
 ### Golden datasets must exercise skill mechanics
 
@@ -1105,6 +1399,435 @@ The repo's default models have been changed from `openai/gpt-4.1` to `openai/goo
 # OpenAI (requires your own key):
 --optimizer-model "openai/gpt-4.1" --eval-model "openai/gpt-4.1-mini"
 ```
+
+### Socket-Level Timeout Hardening Against I/O Hangs (2026-04-24)
+
+**Problem:** Even with multiprocessing watchdogs, a blocked HTTP call can hang the subprocess until the hard `join(timeout)` fires — wasting 10+ minutes. DSPy uses `requests` which has no default read timeout. A model endpoint that accepts the TCP connection but never sends a response body will block forever.
+
+**Solution:** Set aggressive socket and HTTP timeouts **before** importing DSPy:
+
+```python
+import socket
+import requests
+
+# Global socket timeout — kills connections that never respond
+socket.setdefaulttimeout(45)
+
+# Monkey-patch requests.Session to add connect/read timeouts
+_original_request = requests.Session.request
+def _patched_request(self, method, url, **kwargs):
+    if "timeout" not in kwargs:
+        kwargs["timeout"] = (30, 120)  # (connect_timeout, read_timeout)
+    return _original_request(self, method, url, **kwargs)
+requests.Session.request = _patched_request
+```
+
+**Why this order matters:**
+- `socket.setdefaulttimeout` must be called **before** `urllib3` creates connection pools
+- The `requests` patch must be applied **before** `dspy` imports and caches its LM client
+- If DSPy is imported first, it creates `OpenAI` client instances that cache their own `httpx` sessions and ignore later patches
+
+**Placement in rotation script:**
+```python
+# At the very top of evolve_skill_rotation.py, BEFORE any dspy import
+import socket, requests
+socket.setdefaulttimeout(45)
+# ... requests patch ...
+
+# ONLY NOW import dspy and evolution modules
+import dspy
+from evolution.skills.evolve_skill import evolve
+```
+
+**Tuning:**
+| Parameter | Default | Behavior |
+|-----------|---------|----------|
+| `socket.setdefaulttimeout` | 45s | Hard ceiling on any socket operation |
+| `requests` connect | 30s | Time to establish TCP + TLS |
+| `requests` read | 120s | Time to receive full response body |
+
+If a model typically responds in 5-10s but occasionally hangs, these timeouts convert an indefinite hang into a fast `requests.exceptions.ReadTimeout` that triggers the fallback loop within 2 minutes instead of 10.
+
+---
+
+### Phase-Aware Watchdog Grace Periods (2026-04-24)
+
+**Problem:** A flat 5-minute stall timeout falsely kills healthy runs. MIPROv2's holdout evaluation phase can take 3-5 minutes with no progress log updates because it scores the full validation set sequentially. The default 90s grace killed runs that were making legitimate progress.
+
+**Solution:** Vary the stall grace period by phase:
+
+```python
+def check_progress_health(progress_file: Path) -> tuple[bool, str]:
+    if not progress_file.exists():
+        return True, "no progress file yet"
+
+    entries = [json.loads(line) for line in progress_file.read_text().strip().split("\n") if line.strip()]
+    last_entry = entries[-1]
+    last_phase = last_entry.get("phase", "unknown")
+    last_ts = datetime.fromisoformat(last_entry["_ts"].replace("Z", "+00:00"))
+    stalled = (datetime.now().astimezone() - last_ts).total_seconds()
+
+    # Phase-aware grace periods
+    if last_phase in ("evolved_constraints", "optimization_complete"):
+        grace = 300  # 5 min — holdout evaluation is slow
+    elif last_phase == "trial":
+        grace = 180  # 3 min — trial scoring takes time
+    else:
+        grace = 90   # 1.5 min — bootstrapping should be fast
+
+    if stalled > grace:
+        return False, f"stalled {stalled:.0f}s at phase '{last_phase}' (grace={grace}s)"
+    return True, f"last phase: {last_phase}"
+```
+
+**Phase definitions:**
+| Phase | Typical Duration | Grace |
+|-------|-----------------|-------|
+| `start`, `skill_loaded`, `dataset_ready` | 10-60s | 90s |
+| `optimization_start` | 30-120s | 90s |
+| `trial` | 60-180s per trial | 180s |
+| `evolved_constraints`, `optimization_complete` | 180-300s | 300s |
+
+This eliminates false kills while still catching true hangs quickly in early phases.
+
+---
+
+### Size-Aware Timeouts: Flat Timeouts Kill Large Skills (2026-04-24)
+
+**Problem:** A flat 90-second stall timeout falsely kills healthy runs on large skills. Minimax-m2.5 bootstrapped 4 traces for a 102KB skill in ~80s but was killed at 96s by the watchdog. The model was actively working; the timeout was too aggressive for the skill size.
+
+**Root cause:** MIPROv2's synthetic dataset generation and bootstrapping scale linearly with skill text size. A 102KB skill sends the full skill text as context on every example generation call, while a 3KB skill completes in under 30s.
+
+**Skill size distribution (real data, 44 skills):**
+| Size Bucket | Count | Timeout Needed | Typical Duration |
+|-------------|-------|---------------|------------------|
+| <10KB | 21 | 90s | 30-60s |
+| 10-50KB | 13 | 180-300s | 60-180s |
+| >50KB | 10 | 300-600s | 180-300s |
+| 102KB | 1 | 600-900s | 300-600s |
+
+**Solution:** Make stall timeout proportional to skill size:
+```python
+def get_stall_timeout(skill_path: Path) -> int:
+    size_kb = skill_path.stat().st_size / 1024
+    if size_kb < 10:   return 90   # 1.5 min
+    if size_kb < 50:   return 300  # 5 min
+    if size_kb < 100:  return 600  # 10 min
+    return 900                      # 15 min for 100KB+ monsters
+```
+
+**Additional insight:** Process small skills FIRST. The 21 `<10KB` skills complete in minutes and build wrapper momentum quickly. Save the 102KB monster for last when the pipeline is warm and proven.
+
+**Why Minimax-m2.5 works for larger skills:**
+- It **supports** `response_format` (structured JSON Schema) — unlike degraded Google
+- It is the **fastest** NVIDIA model at inference (~5-10s per call)
+- It does NOT hang on large context; it just needs more time
+- Nemotron-3-super-120b is SLOWER than minimax for large skills; deepseek-v3.2 is comparable
+
+**Order of processing:**
+1. Sort skills by size ascending
+2. Process all `<10KB` skills first (fast wins)
+3. Then 10-50KB, then >50KB
+4. The 102KB skill goes last with 900s timeout
+
+---
+
+### Size-Gated Model Selection: Different Models for Different Skill Sizes (2026-04-24)
+
+**Problem:** Not all models handle all skill sizes equally. gemma-4-26b reached `evolved_constraints` (80%+ through MIPROv2) on a 21KB skill but was killed by timeout — it works, but is too slow for large skills. minimax-m2.5 bootstraps 4 traces for a 102KB skill in 80s but should be reserved for skills where its speed matters. Using the wrong model wastes tokens and time.
+
+**Solution:** Gate model eligibility by skill size. Each model has `min_size_kb` and `max_size_kb` thresholds:
+
+```python
+MODELS = [
+    # Tier 0: Premium large-context (placeholder until available)
+    {
+        "id": "deepseek-ai/deepseek-v4",
+        "provider": "direct", "tier": 0,
+        "max_size_kb": float("inf"), "min_size_kb": 100,
+        "available": False,  # Enable when proxy adds it
+        "note": "1M context, premium — for >100KB skills",
+    },
+    # Tier 1: Fast, proven reliable
+    {
+        "id": "openai/nvidia-proxy/minimaxai/minimax-m2.5",
+        "provider": "nvidia", "tier": 1,
+        "max_size_kb": 100, "min_size_kb": 0,
+        "available": True,
+        "note": "Fastest NVIDIA model, up to 100KB",
+    },
+    {
+        "id": "deepseek-ai/deepseek-v3.2",
+        "provider": "direct", "tier": 1,
+        "max_size_kb": float("inf"), "min_size_kb": 0,
+        "available": True,
+        "note": "Excellent reasoning, any size",
+    },
+    {
+        "id": "gemini-2.0-flash",
+        "provider": "direct", "tier": 1,
+        "max_size_kb": float("inf"), "min_size_kb": 0,
+        "available": True,
+        "note": "Direct Google API, bypasses degraded proxy",
+    },
+    # Tier 2: gemma-4 — proven capable but size-restricted
+    {
+        "id": "gemma-4-26b-a4b-it",
+        "provider": "direct", "tier": 2,
+        "max_size_kb": 10, "min_size_kb": 0,
+        "available": True,
+        "note": "Proven to evolved_constraints, ONLY <10KB",
+    },
+    {
+        "id": "gemma-4-31b-it",
+        "provider": "direct", "tier": 2,
+        "max_size_kb": 10, "min_size_kb": 0,
+        "available": True,
+        "note": "gemma-4 variant, ONLY <10KB",
+    },
+    # Tier 2-3: Large-context fallbacks
+    {
+        "id": "openai/nvidia-proxy/nvidia/nemotron-3-super-120b-a12b",
+        "provider": "nvidia", "tier": 2,
+        "max_size_kb": 100, "min_size_kb": 0,
+        "available": True,
+        "note": "Strong but slower, up to 100KB",
+    },
+    {
+        "id": "hermes-4-405b",
+        "provider": "direct", "tier": 2,
+        "max_size_kb": float("inf"), "min_size_kb": 0,
+        "available": True,
+        "note": "Massive model, any size",
+    },
+    {
+        "id": "meta/llama-3.1-405b-instruct",
+        "provider": "direct", "tier": 2,
+        "max_size_kb": float("inf"), "min_size_kb": 0,
+        "available": True,
+        "note": "Huge context window, any size",
+    },
+    {
+        "id": "openai/nvidia-proxy/moonshotai/kimi-k2.5",
+        "provider": "nvidia", "tier": 3,
+        "max_size_kb": 100, "min_size_kb": 0,
+        "available": True,
+        "note": "Good reasoning, up to 100KB",
+    },
+    {
+        "id": "gemini-2.0-flash-lite",
+        "provider": "direct", "tier": 3,
+        "max_size_kb": float("inf"), "min_size_kb": 0,
+        "available": True,
+        "note": "Lightweight Gemini, any size",
+    },
+]
+
+def filter_models_by_size(models: list[dict], size_kb: float) -> list[dict]:
+    return [m for m in models
+            if m.get("available", True)
+            and m.get("min_size_kb", 0) <= size_kb <= m.get("max_size_kb", float("inf"))]
+```
+
+**Resulting eligibility by skill size:**
+| Skill Size | Eligible Models | Excluded |
+|-----------|----------------|----------|
+| <10KB | **All 10 models** (including gemma-4) | None |
+| 10-100KB | 8 models | gemma-4 (max 10KB) |
+| >100KB | 5 models | gemma-4, minimax, nemotron, kimi |
+
+**Why gemma-4 is restricted to <10KB:**
+- **Proven capable:** Reached `evolved_constraints` on 21KB skill before timeout
+- **Too slow:** ~32s per trace on 18KB skill; would need 600s+ for larger skills
+- **Better fit:** Small skills where it completes within 180s; saves faster models for larger work
+
+**Why minimax is restricted to <=100KB:**
+- **Proven capable:** Bootstrapped 4 traces for 102KB skill in ~80s
+- **Not optimal:** For >100KB skills, large-context models (deepseek, hermes, llama) are more reliable
+- **Reserve capacity:** Keep minimax available for the many 10-100KB skills where speed matters
+
+**Why deepseek-v4 is min 100KB:**
+- **Placeholder:** Not yet available in proxy
+- **When enabled:** Will be primary for >100KB skills (1M context, premium quality)
+- **Cost-conscious:** Don't burn premium tokens on small skills that cheap models handle fine
+
+**Dry-run verification example:**
+```
+Skill: coding-standards (1.0KB)
+  Eligible models: 10 of 10 available
+  → gemma-4, minimax, deepseek-v3.2, gemini-flash, etc.
+
+Skill: s3-server-side-copy (12.6KB)
+  Eligible models: 8 of 10 available
+  🚫 Excluded: gemma-4-26b (max 10KB), gemma-4-31b (max 10KB)
+
+Skill: managing-hermes-honcho-containers (103.4KB)
+  Eligible models: 5 of 10 available
+  🚫 Excluded: minimax (max 100KB), gemma-4 (max 10KB), nemotron (max 100KB), kimi (max 100KB)
+  → deepseek-v3.2, gemini-flash, hermes-4-405b, llama-3.1-405b, gemini-flash-lite
+```
+
+**Integration with rotation script:**
+1. Discover skill sizes at startup
+2. Sort pending skills by size ascending (smallest first)
+3. For each skill, filter models by `min_size_kb <= size <= max_size_kb`
+4. Rotate through eligible models using `last_model_index`
+5. On failure, fallback to next eligible model (cross-provider if needed)
+
+---
+
+### Google-Proxy Provider Degradation on Structured Output (2026-04-24)
+
+**Critical finding:** Google-proxy is NOT failing from token exhaustion or rate limits. It is **degraded on structured output** — every request with `response_format` (JSON Schema) returns `503 BAD_REQUEST`.
+
+**Observed from kilo-proxy health endpoint:**
+```json
+{
+  "health": "healthy",
+  "degraded": true,
+  "degraded_reason": "BAD_REQUEST",
+  "consecutive_failures": 3
+}
+```
+
+**All 8 Google models fail identically:**
+```
+Both structured output format and JSON mode failed.
+Please choose a model that supports `response_format` argument.
+Original error: litellm.ServiceUnavailableError: ServiceUnavailableError:
+OpenAIException - Error code: 503 - {'error': 'Provider google-proxy is degraded'}
+```
+
+**Implication:** Google-proxy currently cannot be used for DSPy MIPROv2 at all, regardless of model choice or token rotation. This is a **provider-level capability outage**, not a token issue.
+
+**Workaround:** Use NVIDIA-proxy exclusively until Google-proxy recovers. The 5 NVIDIA tokens (minimax-m2.5, deepseek-v3.2, nemotron-3-super, llama-3.1-405b, kimi-k2.5) support structured output reliably.
+
+**Verification command:**
+```bash
+# Test structured output support directly
+curl -s http://localhost:8080/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "openai/google-proxy/gemma-4-26b-a4b-it",
+    "messages": [{"role": "user", "content": "Return JSON with key foo"}],
+    "response_format": {"type": "json_schema", "json_schema": {"name": "test", "schema": {"type": "object", "properties": {"foo": {"type": "string"}}, "required": ["foo"]}}}
+  }'
+# Returns 503 BAD_REQUEST if google-proxy is degraded
+```
+
+**Models that reliably support `response_format` (verified 2026-04-24):**
+| Model | Provider | Speed | Notes |
+|-------|----------|-------|-------|
+| `minimaxai/minimax-m2.5` | nvidia-proxy | Fastest | Best workhorse for batch |
+| `deepseek-ai/deepseek-v3.2` | nvidia-proxy | Fast | Excellent reasoning |
+| `meta/llama-3.1-405b-instruct` | nvidia-proxy | Slow | Strongest but expensive |
+| `moonshotai/kimi-k2.5` | nvidia-proxy | Medium | Good for eval |
+| `gemini-2.0-flash` | direct | Fast | Bypasses degraded google-proxy |
+| `hermes-4-405b` | direct | Medium | Strong instruction following |
+
+---
+
+### Cross-Provider Fallback: Updated Reality (2026-04-24)
+
+**Problem:** Restricting evolution to a single provider wastes half the token pool and increases blast radius when that provider has an outage.
+
+**Updated reality:** Google-proxy is degraded on structured output. The cross-provider fallback now means NVIDIA-primary with Google-fallback, but Google will likely fail. The true resilience comes from **model rotation within NVIDIA** plus **direct-model fallback** (bypassing the proxy entirely for gemini/hermes).
+
+**Provider assignment strategy (updated):**
+```python
+PROVIDER_MODELS = {
+    "nvidia": [  # Primary: all 5 tokens support structured output
+        "openai/nvidia-proxy/minimaxai/minimax-m2.5",
+        "openai/nvidia-proxy/deepseek-ai/deepseek-v3.2",
+        "openai/nvidia-proxy/nvidia/nemotron-3-super-120b-a12b",
+        "openai/nvidia-proxy/meta/llama-3.1-405b-instruct",
+        "openai/nvidia-proxy/moonshotai/kimi-k2.5",
+        "openai/nvidia-proxy/qwen/qwen3.5-397b-a17b",
+    ],
+    "direct": [  # Fallback: bypass degraded proxy providers
+        "gemini-2.0-flash",
+        "hermes-4-405b",
+    ],
+    # "google": EXCLUDED — degraded on structured output (2026-04-24)
+    # "cloudflare": EXCLUDED — never supported json_schema
+}
+```
+
+**Fallback flow (updated):**
+```python
+# 1. Try all NVIDIA models (6 models across 5 tokens)
+for model in PROVIDER_MODELS["nvidia"]:
+    result = run_evolution_with_watchdog(..., model)
+    if result["status"] == "done":
+        break
+
+# 2. If NVIDIA exhausted, try direct models (bypass proxy)
+if result["status"] != "done":
+    for model in PROVIDER_MODELS["direct"]:
+        result = run_evolution_with_watchdog(..., model)
+        if result["status"] == "done":
+            break
+```
+
+**Key change from earlier:** Google-proxy models are no longer in the rotation. They will all fail on structured output. The fallback is direct models, not Google-proxy.
+
+**Cloudflare is permanently excluded** — it does not support DSPy MIPROv2's `json_schema` structured output.
+
+---
+
+### Stale Progress File Pitfall (2026-04-24)
+
+**Problem:** `progress.jsonl` from a previous failed run contains old `"phase": "start"` entries. The restart-loop detector counts these and immediately kills the new process on its first health check, before it has a chance to make any progress.
+
+**Solution:** Unlink the progress file **before** every new attempt:
+
+```python
+output_dir = HERMES_REPO / "output" / skill_name
+progress_file = output_dir / "progress.jsonl"
+if progress_file.exists():
+    progress_file.unlink()  # critical: prevents false restart-loop kills
+```
+
+**Also clear** any other stale artifacts that can poison health checks:
+- `output_dir / "evolved_skill.md"` (from previous failed run)
+- `output_dir / "metrics.json"` (stale scores)
+
+**Why this matters:** A zombie reset (see "Context Compaction Kills ALL Processes" above) leaves `progress.jsonl` behind. Without clearing it, the next evolution attempt on that skill will be killed within 30 seconds by the restart-loop detector.
+
+---
+
+### Full 10-Token Batch Architecture Summary
+
+For running evolution across 40+ skills with maximum resilience:
+
+```
+Batch Loop (bash, background=true)
+  ├── For each skill:
+  │    ├── Clear stale progress.jsonl
+  │    ├── Pick primary provider (google/nvidia) by skill index parity
+  │    ├── Try all models from primary provider
+  │    │    ├── Run in multiprocessing.Process
+  │    │    ├── Socket timeout 45s + requests (30,120)
+  │    │    ├── Phase-aware watchdog (90s/180s/300s grace)
+  │    │    └── If hung → kill, return status="hung", try next model
+  │    ├── If primary exhausted → fallback to OTHER provider
+  │    └── If all 14 models fail → mark failed, move on
+  └── Sleep 15s, repeat until no pending skills remain
+```
+
+**Key parameters for 40-skill batch:**
+| Parameter | Value | Rationale |
+|-----------|-------|-----------|
+| `MODEL_ATTEMPT_TIMEOUT_SECONDS` | 600 | 10 min max per model attempt |
+| `PROGRESS_STALL_SECONDS_DEFAULT` | 90 | Bootstrapping is fast |
+| `PROGRESS_STALL_SECONDS_TRIAL` | 180 | Trial scoring needs time |
+| `PROGRESS_STALL_SECONDS_LATE` | 300 | Holdout eval is slow |
+| `MAX_RESTART_LOOPS` | 3 | Detect crash-restart cycles |
+| `socket.setdefaulttimeout` | 45 | Hard socket ceiling |
+| `requests timeout` | (30, 120) | TCP + read timeout |
+| Provider assignment | `idx % 2` | Evenly distribute 10 tokens |
+| Cross-provider fallback | Yes | Double model surface |
+| Progress cleanup | `unlink()` before each attempt | Prevent false kills |
 
 ## What's Missing / TODO
 

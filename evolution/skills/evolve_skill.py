@@ -100,8 +100,8 @@ def evolve(
     iterations: int = 10,
     eval_source: str = "synthetic",
     dataset_path: Optional[str] = None,
-    optimizer_model: str = "openai/google-proxy/gemma-4-31b-it",
-    eval_model: str = "openai/google-proxy/gemma-4-31b-it",
+    optimizer_model: str = "openai/gpt-4o-mini",
+    eval_model: str = "openai/gpt-4o-mini",
     hermes_repo: Optional[str] = None,
     skill_path: Optional[str] = None,
     run_tests: bool = False,
@@ -224,7 +224,7 @@ def evolve(
     console.print(f"  Eval model: {eval_model}")
 
     # Configure DSPy
-    lm = dspy.LM(eval_model)
+    lm = dspy.LM(model=eval_model, temperature=1.0, max_tokens=32000)
     dspy.configure(lm=lm)
 
     # Create the baseline skill module
@@ -246,16 +246,22 @@ def evolve(
     progress.log("optimization_start", {"trials_planned": num_trials if not auto_mode else 10})
 
     try:
+        # reflection_lm: strong model for GEPA's reflection phase
+        reflection_lm = dspy.LM(
+            model=eval_model,
+            temperature=1.0,
+            max_tokens=32000,
+        )
         optimizer = dspy.GEPA(
             metric=skill_fitness_metric,
             max_full_evals=iterations,
+            reflection_lm=reflection_lm,
         )
 
         optimized_module = optimizer.compile(
             baseline_module,
             trainset=trainset,
             valset=valset,
-            requires_permission_to_run=False,
         )
     except Exception as e:
         # Fall back to MIPROv2 if GEPA isn't available in this DSPy version

@@ -112,6 +112,70 @@ class SyntheticDatasetBuilder:
         self.config = config
         self.generator = dspy.ChainOfThought(self.GenerateTestCases)
 
+    def _parse_test_cases(self, raw_text: str) -> list:
+        """Robustly parse JSON test cases with multiple fallback strategies."""
+        import re
+
+        # Strategy 1: Direct JSON parse
+        try:
+            return json.loads(raw_text)
+        except json.JSONDecodeError:
+            pass
+
+        # Strategy 2: Extract JSON array via regex
+        match = re.search(r'\[.*\]', raw_text, re.DOTALL)
+        if match:
+            try:
+                return json.loads(match.group())
+            except json.JSONDecodeError:
+                pass
+
+        # Strategy 3: Fix common JSON syntax errors and retry
+        fixed = raw_text
+        # Remove trailing commas before ] or }
+        fixed = re.sub(r',(\s*[}\]])', r'\1', fixed)
+        # Remove control characters
+        fixed = re.sub(r'[\x00-\x1f\x7f]', '', fixed)
+        # Replace single-quoted strings with double quotes (naive)
+        # Only do this if it looks like the issue
+        if "'task_input'" in fixed or "'expected_behavior'" in fixed:
+            fixed = fixed.replace("'", '"')
+        try:
+            return json.loads(fixed)
+        except json.JSONDecodeError:
+            pass
+
+        # Strategy 4: Extract individual objects and parse them one by one
+        # Pattern matches {"key": "value", ...} objects
+        objects = re.findall(r'\{[^{}]*\}', raw_text)
+        parsed = []
+        for obj in objects:
+            try:
+                parsed.append(json.loads(obj))
+            except json.JSONDecodeError:
+                continue
+        if parsed:
+            return parsed
+
+        # Strategy 5: Last resort — return a minimal default dataset
+        # so the evolution can proceed with a warning
+        print(f"[WARNING] Could not parse test cases JSON. Using minimal fallback dataset.")
+        print(f"[DEBUG] Raw text preview: {raw_text[:300]}...")
+        return [
+            {
+                "task_input": "Explain the purpose of this skill.",
+                "expected_behavior": "Provide a clear, accurate explanation based on the skill content.",
+                "difficulty": "easy",
+                "category": "general",
+            },
+            {
+                "task_input": "What commands or steps does this skill describe?",
+                "expected_behavior": "List the key commands or procedures mentioned in the skill.",
+                "difficulty": "medium",
+                "category": "procedural",
+            },
+        ]
+
     def generate(
         self,
         artifact_text: str,
@@ -132,17 +196,8 @@ class SyntheticDatasetBuilder:
                 num_cases=n,
             )
 
-        # Parse the generated test cases
-        try:
-            cases_raw = json.loads(result.test_cases)
-        except json.JSONDecodeError:
-            # Try to extract JSON from the response
-            import re
-            match = re.search(r'\[.*\]', result.test_cases, re.DOTALL)
-            if match:
-                cases_raw = json.loads(match.group())
-            else:
-                raise ValueError(f"Could not parse test cases from LLM output: {result.test_cases[:200]}")
+        # Parse the generated test cases with multiple fallback strategies
+        cases_raw = self._parse_test_cases(result.test_cases)
 
         examples = [
             EvalExample(
