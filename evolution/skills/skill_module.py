@@ -5,6 +5,7 @@ where the skill text is the optimizable parameter. GEPA can then
 mutate the skill text and evaluate the results.
 """
 
+import hashlib
 import re
 from pathlib import Path
 from typing import Optional
@@ -12,6 +13,24 @@ from typing import Optional
 import dspy
 
 from evolution.core.lm_tracker import LM_TRACKER
+
+# ── Forward cache (mitigation: cache forward() by skill_text + task_input) ────
+# GEPA may re-evaluate the same candidate multiple times (subsample → full eval).
+# Caches the last 500 results keyed by (skill_text_hash, task_input).
+# Cleared between GEPA compile() calls via clear_forward_cache().
+_forward_cache: dict = {}
+_FORWARD_CACHE_MAX = 500
+
+
+def clear_forward_cache():
+    """Call between GEPA compile() invocations to free memory."""
+    _forward_cache.clear()
+
+
+def _cache_key(skill_text: str, task_input: str) -> str:
+    """Deterministic key for caching forward() results."""
+    h = hashlib.sha256(skill_text.encode()).hexdigest()[:16]
+    return f"{h}:{task_input}"
 
 
 def load_skill(skill_path: Path) -> dict:
@@ -106,7 +125,19 @@ class SkillModule(dspy.Module):
     1. Uses the skill text as instructions
     2. Processes the task input
     3. Returns the agent's response
+
+    When short_circuit=True (default), forward() returns the skill text
+    directly without calling the LLM. This eliminates the n² evaluation
+    explosion. The metric function scores the skill text against the
+    expected rubric via heuristic + LLMJudge — a valid but less rich signal.
+
+    When short_circuit=False, forward() calls dspy.Predict() which sends
+    the full skill text to the LLM on every evaluation (original behavior).
     """
+
+    # Module-level flag: when True, forward() skips the LLM call.
+    # Set via SkillModule.short_circuit = True before compile().
+    short_circuit: bool = True
 
     class TaskWithSkill(dspy.Signature):
         """Complete a task following the provided skill instructions.
@@ -125,6 +156,27 @@ class SkillModule(dspy.Module):
 
     def forward(self, task_input: str, _iteration: Optional[int] = None,
                 _candidate: Optional[int] = None, _example: Optional[int] = None) -> dspy.Prediction:
+        # ── Cache check (mitigation: avoid redundant forward calls) ─────────
+        key = _cache_key(self.skill_text, task_input)
+        cached = _forward_cache.get(key)
+        if cached is not None:
+            return cached
+
+        # ── Short-circuit mode (mitigation: eliminate n² inner loop) ────────
+        if self.short_circuit:
+            output = (
+                f"Follow these skill instructions to complete the task:\n\n"
+                f"{self.skill_text}\n\n"
+                f"---\nTask: {task_input}\n---\n"
+                f"Based on the skill above, here is my response:"
+            )
+            result = dspy.Prediction(output=output)
+            # Cache and return — no LM call, no tracking
+            if len(_forward_cache) < _FORWARD_CACHE_MAX:
+                _forward_cache[key] = result
+            return result
+
+        # ── Full LLM evaluation path (original behavior) ────────────────────
         # Track this LM call — it's the n² inner loop
         model_name = ""
         try:

@@ -46,6 +46,7 @@ from evolution.skills.skill_module import (
     load_skill,
     find_skill,
     reassemble_skill,
+    clear_forward_cache,
 )
 
 console = Console()
@@ -155,6 +156,7 @@ def evolve(
     auto_mode: Optional[str] = None,
     progress_file: Optional[str] = None,
     eval_examples: Optional[int] = None,
+    short_circuit_eval: bool = True,
 ):
     """Main evolution function — orchestrates the full optimization loop."""
 
@@ -369,7 +371,15 @@ def evolve(
             reflection_lm=tracked_reflection_lm,
         )
 
+        # Apply mitigations before compile
+        SkillModule.short_circuit = short_circuit_eval
+        clear_forward_cache()
+
         console.print(f"  [dim]GEPA reflection LM: {eval_model} (tracked)[/dim]")
+        if short_circuit_eval:
+            console.print(f"  [green]  ✓ forward() short-circuit ON — no LM calls in evaluation loop[/green]")
+        else:
+            console.print(f"  [yellow]  ⚠ forward() short-circuit OFF — full LM evaluation (n² explosion)[/yellow]")
         console.print(f"  [dim]Training set: {len(trainset)} examples, Validation set: {len(valset)} examples[/dim]")
         console.print(f"  [dim]Expected minimum: {iterations} iterations × ~10 candidates × {len(trainset)} eval examples = ~{iterations * 10 * len(trainset)} forward calls (eval_examples={eval_examples})[/dim]")
 
@@ -464,6 +474,7 @@ def evolve(
 
     # ── 8. Evaluate on holdout set ──────────────────────────────────────
     console.print(f"\n[bold]Evaluating on holdout set ({len(dataset.holdout)} examples)[/bold]")
+    clear_forward_cache()
 
     holdout_examples = dataset.to_dspy_examples("holdout", skill_text=skill_body)
 
@@ -593,7 +604,10 @@ def evolve(
 @click.option("--skill-path", default=None, help="Direct path to SKILL.md (bypasses repo search)")
 @click.option("--progress-file", default=None, help="Path to JSONL progress checkpoint file")
 @click.option("--eval-examples", default=None, type=int, help="Limit training examples for GEPA (default: all, recommend 1-5 to mitigate n² explosion)")
-def main(skill, iterations, eval_source, dataset_path, optimizer_model, eval_model, hermes_repo, run_tests, dry_run, num_trials, num_candidates, num_threads, auto_mode, skill_path, progress_file, eval_examples):
+@click.option("--full-lm-eval/--short-circuit-eval", "short_circuit_eval", default=True,
+              help="--full-lm-eval: call LLM on every forward() (original, expensive). "
+                   "--short-circuit-eval: return skill text directly (cheap, default).")
+def main(skill, iterations, eval_source, dataset_path, optimizer_model, eval_model, hermes_repo, run_tests, dry_run, num_trials, num_candidates, num_threads, auto_mode, skill_path, progress_file, eval_examples, short_circuit_eval):
     """Evolve a Hermes Agent skill using DSPy + GEPA optimization."""
     evolve(
         skill_name=skill,
@@ -612,6 +626,7 @@ def main(skill, iterations, eval_source, dataset_path, optimizer_model, eval_mod
         auto_mode=auto_mode,
         progress_file=progress_file,
         eval_examples=eval_examples,
+        short_circuit_eval=short_circuit_eval,
     )
 
 
