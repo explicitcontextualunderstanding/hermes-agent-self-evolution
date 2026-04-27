@@ -374,6 +374,10 @@ def evolve(
         # Apply mitigations before compile
         SkillModule.short_circuit = short_circuit_eval
         clear_forward_cache()
+        if short_circuit_eval:
+            # Disable DSPy's parallelizer — threads lose module refs
+            # when forward() returns instantly (no LLM call to wait on).
+            dspy.settings.num_threads = 1
 
         console.print(f"  [dim]GEPA reflection LM: {eval_model} (tracked)[/dim]")
         if short_circuit_eval:

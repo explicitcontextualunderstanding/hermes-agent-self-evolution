@@ -1,26 +1,5 @@
 {
   "signature_doc": "Complete a task following the provided skill instructions.\n\nYou are an AI agent following specific skill instructions to complete a task.\nRead the skill instructions carefully and follow the procedure described.",
   "signature_instructions": "Complete a task following the provided skill instructions.\n\nYou are an AI agent following specific skill instructions to complete a task.\nRead the skill instructions carefully and follow the procedure described.",
-  "demos": [
-    {
-      "skill_instructions": "\n\n# === SKILL.md ===\n\n---\nname: 1password-connect\nproficiency: 0.85\nlatent_vars:\n  - op_connect_reachable: [true, false]\n  - kernel_keyring_loaded: [true, false]\n---\n\n# 1Password Connect \u2014 Kernel Keyr...",
-      "task_input": "The wrapper script returns an empty result when I ask for ANTHROPIC_API_KEY. How do I debug this?...",
-      "output": "# Debugging Empty Result from op_api_key_wrapper.sh\n\nHere's a systematic debugging approach:\n\n## 1. Check Kernel Keyring Token Presence\n\n```bash\n# First, ensure session linking (required on Jetson)\nke..."
-    },
-    {
-      "skill_instructions": "\n\n# === SKILL.md ===\n\n---\nname: 1password-connect\nproficiency: 0.85\nlatent_vars:\n  - op_connect_reachable: [true, false]\n  - kernel_keyring_loaded: [true, false]\n---\n\n# 1Password Connect \u2014 Kernel Keyr...",
-      "task_input": "How can I verify that Claude Code is actually using the wrapper and not trying to read environment variables directly?...",
-      "output": "To verify that Claude Code is using the wrapper and not reading environment variables directly, you can perform the following checks:\n\n## 1. Verify the Wrapper Exists and is Linked\n\n```bash\n# Check th..."
-    },
-    {
-      "skill_instructions": "\n\n# === SKILL.md ===\n\n---\nname: 1password-connect\nproficiency: 0.85\nlatent_vars:\n  - op_connect_reachable: [true, false]\n  - kernel_keyring_loaded: [true, false]\n---\n\n# 1Password Connect \u2014 Kernel Keyr...",
-      "task_input": "What is the purpose of the ~/.1password-secrets.env file and what does it contain?...",
-      "output": "Based on the skill instructions provided, the `~/.1password-secrets.env` file serves as the **secrets mapping** file for the 1Password Connect integration.\n\n**Purpose:**\nThe file maps environment vari..."
-    },
-    {
-      "skill_instructions": "\n\n# === SKILL.md ===\n\n---\nname: 1password-connect\nproficiency: 0.85\nlatent_vars:\n  - op_connect_reachable: [true, false]\n  - kernel_keyring_loaded: [true, false]\n---\n\n# 1Password Connect \u2014 Kernel Keyr...",
-      "task_input": "The keyctl show command shows the tokens are loaded but the wrapper still fails. What could be wrong with the network connectivity?...",
-      "output": "Given that `keyctl show` confirms the tokens are loaded in the kernel keyring, the issue is likely **network connectivity to the 1Password Connect service** rather than keyring access. Here are the mo..."
-    }
-  ]
+  "demos": []
 }
