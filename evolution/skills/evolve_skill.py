@@ -10,6 +10,7 @@ import logging
 import socket
 import sys
 import time
+import concurrent.futures
 from pathlib import Path
 from datetime import datetime
 from typing import Optional
@@ -109,6 +110,32 @@ class MiproCheckpointHandler(logging.Handler):
                 self.progress.log("best_score_update", {"best_score": best})
             except Exception:
                 pass
+
+
+def _compile_with_timeout(optimizer, module, trainset, valset, iterations, eval_examples, skill_size_kb, **extra_kwargs):
+    """Run optimizer.compile() with a wall-clock timeout.
+
+    Prevents zombie processes: if compile hangs (e.g. all 60s httpx
+    timeouts fire sequentially), the thread is abandoned after
+    timeout_secs and a TimeoutError is raised.
+    """
+    # Timeout: 120s per (iteration × eval_example) per KB of skill text,
+    # minimum 600s (10 min), cap at 7200s (2h).
+    per_unit = 120  # seconds per (iteration × example × KB)
+    base = iterations * eval_examples * max(1, skill_size_kb) * per_unit
+    timeout_secs = min(max(base, 600), 7200)
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
+        future = pool.submit(optimizer.compile, module, trainset=trainset, valset=valset, **extra_kwargs)
+        try:
+            result = future.result(timeout=timeout_secs)
+            return result
+        except concurrent.futures.TimeoutError:
+            raise TimeoutError(
+                f"optimizer.compile() timed out after {timeout_secs}s "
+                f"(iterations={iterations}, eval_examples={eval_examples}, "
+                f"skill_size={skill_size_kb}KB)"
+            )
 
 
 def evolve(
@@ -327,6 +354,7 @@ def evolve(
             return getattr(self._lm, name)
 
     try:
+        skill_size_kb = len(skill["body"]) // 1000
         # reflection_lm: strong model for GEPA's reflection phase
         reflection_lm = dspy.LM(
             model=eval_model,
@@ -345,10 +373,10 @@ def evolve(
         console.print(f"  [dim]Training set: {len(trainset)} examples, Validation set: {len(valset)} examples[/dim]")
         console.print(f"  [dim]Expected minimum: {iterations} iterations × ~10 candidates × {len(trainset)} eval examples = ~{iterations * 10 * len(trainset)} forward calls (eval_examples={eval_examples})[/dim]")
 
-        optimized_module = optimizer.compile(
-            baseline_module,
-            trainset=trainset,
-            valset=valset,
+        optimized_module = _compile_with_timeout(
+            optimizer, baseline_module, trainset, valset,
+            iterations=iterations, eval_examples=len(trainset),
+            skill_size_kb=skill_size_kb,
         )
     except Exception as e:
         # Fall back to MIPROv2 if GEPA isn't available in this DSPy version
@@ -358,10 +386,10 @@ def evolve(
                 metric=skill_fitness_metric,
                 auto=auto_mode,
             )
-            optimized_module = optimizer.compile(
-                baseline_module,
-                trainset=trainset,
-                valset=valset,
+            optimized_module = _compile_with_timeout(
+                optimizer, baseline_module, trainset, valset,
+                iterations=iterations, eval_examples=len(trainset),
+                skill_size_kb=skill_size_kb,
                 requires_permission_to_run=False,
             )
         else:
@@ -371,10 +399,10 @@ def evolve(
                 num_candidates=num_candidates,
                 num_threads=num_threads,
             )
-            optimized_module = optimizer.compile(
-                baseline_module,
-                trainset=trainset,
-                valset=valset,
+            optimized_module = _compile_with_timeout(
+                optimizer, baseline_module, trainset, valset,
+                iterations=num_trials, eval_examples=len(trainset),
+                skill_size_kb=skill_size_kb,
                 num_trials=num_trials,
                 minibatch=False,
                 requires_permission_to_run=False,
