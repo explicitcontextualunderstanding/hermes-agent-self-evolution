@@ -254,8 +254,8 @@ def evolve(
     )
     console.print(f"  Judge: sub-sampled (10% in 0.4-0.7 uncertainty zone)")
 
-    # Configure DSPy
-    lm = dspy.LM(model=eval_model, temperature=1.0, max_tokens=32000)
+    # Configure DSPy with per-call timeout (prevents silent httpx hangs)
+    lm = dspy.LM(model=eval_model, temperature=1.0, max_tokens=32000, timeout=60)
     dspy.configure(lm=lm)
 
     # Create the baseline skill module
@@ -332,6 +332,7 @@ def evolve(
             model=eval_model,
             temperature=1.0,
             max_tokens=32000,
+            timeout=60,
         )
         tracked_reflection_lm = _TrackedReflectionLM(reflection_lm)
         optimizer = dspy.GEPA(
