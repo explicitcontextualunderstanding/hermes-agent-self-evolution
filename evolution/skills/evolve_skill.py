@@ -114,29 +114,53 @@ class MiproCheckpointHandler(logging.Handler):
 
 
 def _compile_with_timeout(optimizer, module, trainset, valset, iterations, eval_examples, skill_size_kb, **extra_kwargs):
-    """Run optimizer.compile() with a wall-clock timeout.
+    """Run optimizer.compile() in a subprocess with a hard wall-clock kill.
 
-    Prevents zombie processes: if compile hangs (e.g. all 60s httpx
-    timeouts fire sequentially), the thread is abandoned after
-    timeout_secs and a TimeoutError is raised.
+    Prevents zombie processes: uses multiprocessing.Process so we can
+    actually KILL the compile if it exceeds the timeout, rather than
+    just abandoning the thread (which ThreadPoolExecutor cannot kill).
+
+    Timeout: 120s per (iteration × eval_example) per KB of skill text,
+    minimum 600s (10 min), cap at 7200s (2h).
     """
-    # Timeout: 120s per (iteration × eval_example) per KB of skill text,
-    # minimum 600s (10 min), cap at 7200s (2h).
+    import multiprocessing as mp
+
     per_unit = 120  # seconds per (iteration × example × KB)
     base = iterations * eval_examples * max(1, skill_size_kb) * per_unit
     timeout_secs = min(max(base, 600), 7200)
 
-    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
-        future = pool.submit(optimizer.compile, module, trainset=trainset, valset=valset, **extra_kwargs)
+    result_queue = mp.get_context('spawn').Queue()
+    compile_event = mp.get_context('spawn').Event()
+
+    def _worker():
         try:
-            result = future.result(timeout=timeout_secs)
-            return result
-        except concurrent.futures.TimeoutError:
-            raise TimeoutError(
-                f"optimizer.compile() timed out after {timeout_secs}s "
-                f"(iterations={iterations}, eval_examples={eval_examples}, "
-                f"skill_size={skill_size_kb}KB)"
-            )
+            result = optimizer.compile(module, trainset=trainset, valset=valset, **extra_kwargs)
+            result_queue.put(result)
+        except Exception as e:
+            result_queue.put(e)
+        finally:
+            compile_event.set()
+
+    proc = mp.get_context('spawn').Process(target=_worker, daemon=True)
+    proc.start()
+    proc.join(timeout=timeout_secs)
+
+    if proc.is_alive():
+        proc.kill()
+        proc.join(timeout=5)
+        raise TimeoutError(
+            f"optimizer.compile() timed out after {timeout_secs}s "
+            f"(iterations={iterations}, eval_examples={eval_examples}, "
+            f"skill_size={skill_size_kb}KB) — process KILLED"
+        )
+
+    if not result_queue.empty():
+        result = result_queue.get()
+        if isinstance(result, Exception):
+            raise result
+        return result
+
+    raise RuntimeError("Compile completed but no result was returned")
 
 
 def evolve(
@@ -389,7 +413,7 @@ def evolve(
 
         optimized_module = _compile_with_timeout(
             optimizer, baseline_module, trainset, valset,
-            iterations=iterations, eval_examples=len(trainset),
+            iterations=iterations, eval_examples=eval_examples,
             skill_size_kb=skill_size_kb,
         )
     except Exception as e:
@@ -402,7 +426,7 @@ def evolve(
             )
             optimized_module = _compile_with_timeout(
                 optimizer, baseline_module, trainset, valset,
-                iterations=iterations, eval_examples=len(trainset),
+                iterations=iterations, eval_examples=eval_examples,
                 skill_size_kb=skill_size_kb,
                 requires_permission_to_run=False,
             )
@@ -415,7 +439,7 @@ def evolve(
             )
             optimized_module = _compile_with_timeout(
                 optimizer, baseline_module, trainset, valset,
-                iterations=num_trials, eval_examples=len(trainset),
+                iterations=num_trials, eval_examples=eval_examples,
                 skill_size_kb=skill_size_kb,
                 num_trials=num_trials,
                 minibatch=False,

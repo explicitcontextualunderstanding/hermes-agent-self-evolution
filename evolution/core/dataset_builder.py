@@ -205,7 +205,8 @@ class SyntheticDatasetBuilder:
         )
 
         # Configure DSPy to use the judge model for generation
-        lm = dspy.LM(self.config.judge_model)
+        # CRITICAL: set timeout=60 to prevent indefinite hangs on slow API responses
+        lm = dspy.LM(self.config.judge_model, timeout=60)
 
         with dspy.context(lm=lm):
             result = self.generator(

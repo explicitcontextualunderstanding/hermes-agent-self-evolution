@@ -178,6 +178,7 @@ class LLMJudge:
         lm = dspy.LM(
             self.config.eval_model,
             base_url=os.environ.get("OPENAI_BASE_URL", None),
+            timeout=60,
         )
 
         # Track the judge call

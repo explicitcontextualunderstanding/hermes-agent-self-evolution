@@ -81,10 +81,16 @@ def optimize_prompt_text(prompt_text: str, tools: list[str], max_calls: int = 10
         return {"score": score, "correctness": True}
 
     try:
+        # Use proxy model for task_lm (required by GEPA even when evaluator is heuristic)
+        task_lm = "openai/nvidia-proxy/deepseek-ai/deepseek-v4-flash"
+        if os.environ.get("OPENAI_BASE_URL"):
+            task_lm = "openai/nvidia-proxy/deepseek-ai/deepseek-v4-flash"
+
         result = gepa.optimize(
             seed_candidate=seed,
             trainset=dataset,
             evaluator=evaluator,
+            task_lm=task_lm,
             max_metric_calls=max_calls,
         )
         evolved_text = result.get("prompt", prompt_text)
