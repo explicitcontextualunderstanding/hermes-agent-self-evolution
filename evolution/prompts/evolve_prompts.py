@@ -2,8 +2,8 @@
 """
 evolve_prompts.py — GEPA-driven optimization of compose-pkl MCP test prompts.
 
-Phase 1 of Plan 122. Uses GEPA's optimize_anything API to evolve
-natural-language test prompts against the fitness rubric from inventory.py.
+Phase 1 of Plan 122. Uses GEPA to evolve natural-language test prompts
+against the fitness rubric from inventory.py.
 
 Usage:
     # Dry-run validation
@@ -31,6 +31,11 @@ from typing import Optional
 # GEPA
 try:
     import gepa
+    from gepa.adapters.default_adapter.default_adapter import (
+        EvaluationBatch,
+        EvaluationResult,
+        DefaultDataInst,
+    )
 except ImportError:
     print("GEPA not installed. Run: pip install gepa")
     sys.exit(1)
@@ -43,6 +48,112 @@ from evolution.prompts.inventory import (
     PROMPT_TOOLS,
     BASELINE_STATUS,
 )
+
+# ── Custom GEPA Adapter (no LLM calls for evaluation) ──────────────────────
+
+class HeuristicPromptAdapter:
+    """GEPA adapter that evaluates prompts using the heuristic rubric.
+
+    Skips LLM calls entirely — the candidate prompt is scored directly by the
+    rubric. GEPA still uses reflection_lm to propose new prompt variants.
+    """
+
+    def __init__(self, evaluator_fn, dimension_names=None):
+        self.evaluator_fn = evaluator_fn
+        self.dimension_names = dimension_names or [
+            "clarity", "coverage", "resilience",
+            "self_containment", "verifiability",
+        ]
+
+    # GEPA checks hasattr(self.adapter, 'propose_new_texts') —
+    # setting to None lets it fall through to the default proposer
+    propose_new_texts = None
+
+    def evaluate(self, batch, candidate, capture_traces=False):
+        """Score candidate prompts on the batch using the heuristic rubric."""
+        prompt_text = next(iter(candidate.values()))
+        scores = [self.evaluator_fn(prompt_text) for _ in batch]
+        objective_scores = [{"rubric": s} for s in scores]
+
+        # Build trajectories when capture_traces=True (needed for reflection)
+        trajectories = None
+        if capture_traces:
+            trajectories = []
+            for i, score in enumerate(scores):
+                detail = self._score_detail(prompt_text)
+                trajectories.append({
+                    "data": batch[i] if i < len(batch) else {"input": "", "answer": ""},
+                    "full_assistant_response": prompt_text[:500],
+                    "feedback": (
+                        f"Rubric score: {score:.3f}. "
+                        f"Dimensional breakdown: {json.dumps(detail)}. "
+                        f"Target: >0.7 on all dimensions."
+                    ),
+                })
+
+        return EvaluationBatch(
+            outputs=[{"evaluated": prompt_text[:80]} for _ in batch],
+            scores=scores,
+            trajectories=trajectories,
+            objective_scores=objective_scores,
+        )
+
+    def make_reflective_dataset(self, candidate, eval_batch, components_to_update):
+        """Build concise feedback for the reflection_lm to propose improvements.
+
+        Uses trajectories from evaluate() to provide per-example feedback.
+        """
+        prompt_text = next(iter(candidate.values()))
+        comp = components_to_update[0]
+
+        trajectories = eval_batch.trajectories
+        if not trajectories:
+            # Fallback: build from scores
+            items = []
+            for i, score in enumerate(eval_batch.scores):
+                detail = self._score_detail(prompt_text)
+                items.append({
+                    "Inputs": f"Prompt #{i}",
+                    "Generated Outputs": prompt_text[:200],
+                    "Feedback": (
+                        f"Rubric score: {score:.3f}. "
+                        f"Dimensional breakdown: {json.dumps(detail)}. "
+                        "Target: >0.7 on all dimensions."
+                    ),
+                })
+        else:
+            items = []
+            for traj in trajectories:
+                items.append({
+                    "Inputs": traj.get("data", {}).get("input", ""),
+                    "Generated Outputs": traj.get("full_assistant_response", prompt_text[:200]),
+                    "Feedback": traj.get("feedback", "No feedback available."),
+                })
+
+        return {comp: items}
+
+    def _score_detail(self, text: str) -> dict:
+        """Return per-dimension scores for reflection feedback."""
+        # Simple heuristic — just a quick breakdown
+        scores = {}
+        text_lower = text.lower()
+        scores["clarity"] = min(1.0, len(text.split()) / 15) * 0.5 + 0.5 * (
+            0.2 if any(w in text_lower for w in ["should", "must", "verify", "ensure"]) else 0
+        )
+        scores["coverage"] = min(1.0, (
+            0.3 if "list" in text_lower else
+            0.2 if "all" in text_lower else 0.1
+        ))
+        scores["resilience"] = 0.5 + 0.3 * ("even if" in text_lower) + 0.2 * ("timeout" in text_lower)
+        scores["self_containment"] = min(1.0, len(text) / 300) * 0.5 + 0.5 * (
+            0.3 if "step" in text_lower else 0.1
+        )
+        scores["verifiability"] = min(1.0, (
+            0.4 if "assert" in text_lower or "verify" in text_lower else
+            0.2 if "expected" in text_lower else 0.1
+        ))
+        return scores
+
 
 # ── Config ─────────────────────────────────────────────────────────────────
 COMPOSE_PKL = Path("/Users/kieranlal/workspace/compose-pkl")
@@ -68,32 +179,63 @@ def evaluate_prompt_wrapper(prompt_text: str) -> float:
 
 
 def optimize_prompt_text(prompt_text: str, tools: list[str], max_calls: int = 10) -> tuple[str, float, float]:
-    """Optimize a single prompt using GEPA."""
-    # GEPA expects a dict seed_candidate (key=parameter name, value=text)
-    # and a trainset of dicts with 'input' + 'answer' keys
-    seed = {"prompt": prompt_text}
-    dataset = [{"input": prompt_text, "answer": "n/a"}]
+    """Optimize a single prompt using GEPA with a heuristic adapter.
 
-    def evaluator(candidate: dict, data: dict) -> dict:
-        """Score the candidate prompt using our rubric."""
-        score = evaluate_prompt_wrapper(candidate.get("prompt", ""))
-        score = max(0.0, min(1.0, score))
-        return {"score": score, "correctness": True}
+    Uses a custom HeuristicPromptAdapter that scores prompts via the rubric
+    directly (no LLM calls for evaluation). GEPA's reflection_lm proposes
+    new prompt variants through the kilo-proxy.
+    """
+    seed = {"prompt": prompt_text}
+    # GEPA needs at least 2 training examples for pareto tracking
+    dataset = [
+        {"input": "eval", "answer": "pass", "additional_context": {}},
+        {"input": "eval", "answer": "pass", "additional_context": {}},
+    ]
+
+    # Custom adapter: evaluates prompts heuristically (no LLM call)
+    adapter = HeuristicPromptAdapter(
+        evaluator_fn=lambda text: max(0.0, min(1.0, evaluate_prompt_wrapper(text))),
+    )
+
+    # Proxy model for reflection_lm (proposes prompt variants)
+    model_name = "openai/nvidia-proxy/deepseek-ai/deepseek-v4-flash"
+
+    # Custom reflection prompt: tells the LLM this is a TEST DESCRIPTION,
+    # not an LLM system instruction (prevents Docker-command generation)
+    REFLECTION_PROMPT = """I am optimizing a test scenario description for MCP (Model Context Protocol) tool testing.
+
+Current test description:
+```
+<curr_instructions>
+```
+
+The following are rubric evaluations of the current description, including dimensional scores and feedback on what should be improved:
+```
+<inputs_outputs_feedback>
+```
+
+Your task is to write an IMPROVED test scenario description.
+
+IMPORTANT CONSTRAINTS:
+- This is a TEST SCENARIO DESCRIPTION, not executable code or shell commands.
+- The description tells a human test operator what to verify using an MCP tool.
+- Do NOT write Docker commands, shell scripts, or code snippets.
+- The description should be self-contained and clearly state what is being tested.
+- Focus on: clarity, coverage of edge cases, resilience, self-containment, and verifiability.
+
+Provide the new description within ``` blocks."""
 
     try:
-        # Use proxy model for task_lm (required by GEPA even when evaluator is heuristic)
-        task_lm = "openai/nvidia-proxy/deepseek-ai/deepseek-v4-flash"
-        if os.environ.get("OPENAI_BASE_URL"):
-            task_lm = "openai/nvidia-proxy/deepseek-ai/deepseek-v4-flash"
-
         result = gepa.optimize(
             seed_candidate=seed,
             trainset=dataset,
-            evaluator=evaluator,
-            task_lm=task_lm,
+            adapter=adapter,
+            reflection_lm=model_name,
+            reflection_prompt_template=REFLECTION_PROMPT,
             max_metric_calls=max_calls,
+            display_progress_bar=True,
         )
-        evolved_text = result.get("prompt", prompt_text)
+        evolved_text = result.best_candidate.get("prompt", prompt_text)
     except Exception as e:
         print(f"  GEPA optimize failed: {e}")
         evolved_text = prompt_text
