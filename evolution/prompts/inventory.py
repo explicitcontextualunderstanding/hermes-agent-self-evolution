@@ -141,8 +141,8 @@ PROMPT_TOOLS = {
     # State Transitions (67-68)
     67: ["get_ltl_state", "check_action"], 68: ["get_ltl_state"],
     # 69-91: Host-Native Secure Lane (Plans 108/121)
-    # Slab (69-70)
-    69: ["get_checkpoint"], 70: ["get_checkpoint"],
+    # Slab (69-70) — FIXED: was incorrectly using get_checkpoint
+    69: ["create_slab", "list_slabs"], 70: ["delete_slab"],
     # MLX (71-73)
     71: ["get_checkpoint"], 72: ["get_checkpoint"], 73: ["get_checkpoint"],
     # Zero-Path/Security (74-75, 78-79)
@@ -160,6 +160,33 @@ PROMPT_TOOLS = {
     89: ["create_container", "start_container", "get_checkpoint"],
     90: ["create_container", "start_container", "get_checkpoint"],
     91: ["create_container", "get_checkpoint"],
+    # 92-117: Infrastructure Utilities (Networks, Volumes, Images, Pods, Compose)
+    # Network Lifecycle (92-95)
+    92: ["create_network"], 93: ["list_networks"],
+    94: ["delete_network"], 95: ["prune_networks"],
+    # Volume Lifecycle (96-99)
+    96: ["create_volume"], 97: ["list_volumes"],
+    98: ["delete_volume"], 99: ["prune_volumes"],
+    # Image Lifecycle (100-103)
+    100: ["pull_image"], 101: ["tag_image"],
+    102: ["push_image"], 103: ["build_image"],
+    # Pod Full Lifecycle (104-108)
+    104: ["pod_create", "list_containers"], 105: ["pod_status"],
+    106: ["pod_spec"], 107: ["rollback_pod"],
+    108: ["pod_delete"],
+    # Compose Orchestration (109-110)
+    109: ["run_compose_up"], 110: ["run_compose_down"],
+    # Maintenance & Cleanup (111-114)
+    111: ["stream_container_logs", "exec_in_container"],
+    112: ["prune_containers"], 113: ["prune_images"],
+    114: ["agentspec_create", "agentspec_delete", "agentspec_list"],
+    # Slab Cleanup (115-117) — extends 69-70 coverage
+    115: ["create_slab"], 116: ["list_slabs"], 117: ["delete_slab"],
+    # Remaining tool coverage (118-120)
+    118: ["batch_container_operation", "create_container", "stop_container"],
+    119: ["pod_spec"],
+    120: ["execute_native_model", "create_slab"],
+    121: ["get_pkl_template"],
 }
 
 
