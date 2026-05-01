@@ -116,6 +116,65 @@ def _run_prompt_validator(prompt_text: str) -> dict:
             "summary": "Validator error", "valid_parameters": True}
 
 
+# ── Named-Resource Parameterization ─────────────────────────────────────────
+# Prompts create resources with names like "test-dev", "web-nginx". When
+# evaluating multiple candidates in the same session, these names collide.
+# This function appends a run-specific suffix to prevent state contamination.
+#
+# Regex: find resource names after "named", "name", "called", or starting
+# with a known test prefix (test-, stress-, vision-, mlx-, batch-, spec-,
+# compose-, cp-, web-, nginx).
+_RESOURCE_NAME_RE = re.compile(
+    r'(?:named\s+|name\s+|called\s+)'        # "create container named X"
+    r'["\']([a-zA-Z0-9][-a-zA-Z0-9_.]+)["\']'  # the quoted name (at least 2 chars)
+    r'|["\']((?:test|stress|vision|mlx|batch|spec|compose|cp|web|nginx|agent|full'
+    r'|minimal|tool|standalone|hybrid|lifecycle|rapid|duplicate|stopped|bad|empty'
+    r'|special|default|not|ghost|fleet)[-a-zA-Z0-9_]{2,})["\']'  # at least 2 more chars
+)
+
+# Specific one-off names from the 121 prompts not caught by the regex above
+_ONE_OFF_RESOURCE_NAMES = {
+    "vision-frame-0", "clip-input", "exp-001", "hostcapabilityerror",
+    "live-constraint", "metalparavirtualized", "immutable-assistant",
+    "initimeout", "container-operator", "fleetagent", "fleet-agent",
+    "ipaddress", "startedat", "finishedat", "conflict",
+}
+
+
+def _parameterize_names(prompt_text: str, suffix: str) -> str:
+    """Replace resource names in prompt text with suffixed versions.
+
+    Each resource name gets _{suffix} appended. For example, with suffix
+    'a1b2': "Delete container named 'test-dev'" → "Delete container
+    named 'test-dev_a1b2'".
+
+    The suffix is typically a short random string or prompt number, e.g.,
+    'p03' for prompt #3 in the current evolution run.
+    """
+    if not suffix:
+        return prompt_text
+
+    result = prompt_text
+
+    # Replace regex-caught names
+    def _replace_match(m):
+        groups = m.groups()
+        name = groups[0] or groups[1]
+        # Skip image references (containing ':') and names that are too short
+        if name and name not in _ONE_OFF_RESOURCE_NAMES and ':' not in name:
+            return m.group(0).replace(name, f"{name}_{suffix}")
+        return m.group(0)
+
+    result = _RESOURCE_NAME_RE.sub(_replace_match, result)
+
+    # Replace one-off names (less common, explicit list)
+    for name in _ONE_OFF_RESOURCE_NAMES:
+        if name in result:
+            result = result.replace(name, f"{name}_{suffix}")
+
+    return result
+
+
 # ── Scoring functions ──────────────────────────────────────────────────────
 
 def _score_pass(span_attrs: dict) -> float:
@@ -553,6 +612,7 @@ class OTelPromptAdapter:
         candidate: dict[str, str],
         capture_traces: bool = False,
         cleanup: bool = False,
+        run_suffix: str = "",
     ) -> tuple:
         """Evaluate candidate prompts on the batch using OTel metrics.
 
@@ -580,6 +640,10 @@ class OTelPromptAdapter:
             - trajectories: list[dict] or None — per-example traces
         """
         prompt_text = next(iter(candidate.values()))
+
+        # Parameterize resource names with run-specific suffix to prevent
+        # state contamination between evaluations in the same session.
+        prompt_text = _parameterize_names(prompt_text, run_suffix)
 
         # P1.3: Cache check — return cached result if same prompt text evaluated
         # within the same adapter lifecycle.
