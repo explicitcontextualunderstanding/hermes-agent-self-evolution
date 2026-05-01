@@ -48,8 +48,8 @@ W_TOOL_EFFICIENCY = 0.2
 W_TOKEN_EFFICIENCY = 0.1
 
 # Scoring thresholds
-MAX_DURATION_MS = 30_000.0
-MAX_TOKENS = 100_000
+MAX_DURATION_MS = 30000.0
+MAX_TOKENS = 100000
 
 # Session ID regex: looks for "hermes --resume <session_id>" in output
 SESSION_ID_RE = re.compile(r"hermes\s+--resume\s+(\S+)")
