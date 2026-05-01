@@ -278,6 +278,119 @@ def _run_hermes(
         }
 
 
+# ── Feedback helpers ───────────────────────────────────────────────────────
+
+def _strip_hermes_banner(output: str) -> str:
+    """Strip Hermes Agent banner/logo, keeping only the actual response text.
+
+    The hermes chat -q output format:
+      ╭─ Hermes Agent ───╮  (lines 0-46: banner, logo, tools, skills)
+      ╰───────────────────╯
+      (empty)
+      Query: <prompt>
+      Initializing agent...
+      ────────────────────────
+      (empty)
+        ┊ ⚡ tool_call  N.Ns   (tool call notifications)
+       ─  ⚕ Hermes  ──────────  (start of response)
+                                (response text)
+       ────────────────────────  (end of response)
+      Resume this session with:...
+      Session:  ...
+      Duration: ...
+      [hermes-otel] ...
+
+    Strategy: Find the 'Query:' line, then extract text between the
+    '⚕ Hermes' header line and the end-of-response separator line.
+    """
+    lines = output.split('\n')
+
+    # Find the Query: line
+    query_idx = -1
+    for i, line in enumerate(lines):
+        if line.strip().startswith('Query:'):
+            query_idx = i
+            break
+
+    if query_idx < 0:
+        # Fallback: find bottom box border and take text after it
+        for i, line in enumerate(lines):
+            if '╰' in line and '╯' in line:
+                leftovers = '\n'.join(lines[i+1:]).strip()
+                if leftovers:
+                    return leftovers[:500]
+        return output[:500]
+
+    # Find the Hermes response header (⚕ Hermes)
+    response_start = -1
+    for i in range(query_idx, len(lines)):
+        if '╕ Hermes' in lines[i] or '⚕ Hermes' in lines[i]:
+            response_start = i
+            break
+
+    # Alternatively, find the text after the separator line
+    # Look for the separator line that follows "Initializing agent..."
+    separator_idx = -1
+    for i in range(query_idx, len(lines)):
+        s = lines[i].strip()
+        if s and all(c in s for c in '─') and 'Hermes' not in s and '╭' not in s and '╰' not in s:
+            separator_idx = i
+            break
+
+    if response_start < 0 and separator_idx < 0:
+        return output[output.find('Query:'):][:500]
+
+    # Collect content lines between response header and end-of-response separator
+    start_idx = max(response_start, separator_idx)
+    content = []
+    in_response = False
+    for i in range(start_idx + 1, len(lines)):
+        s = lines[i].strip()
+        # Skip tool call notifications
+        if s.startswith('┊ ⚡') or s.startswith('┊'):
+            continue
+        # End-of-response separator (all dashes or box-drawing line)
+        if s and len(s.strip('─ ')) == 0 and len(s) > 3:
+            break
+        # Session footer markers
+        if s.startswith(('Resume this session', 'Session:', 'Duration:', '[hermes-otel]', 'Messages:')):
+            break
+        # Empty line before/after response
+        if not s:
+            continue
+        content.append(s)
+
+    result = '\n'.join(content).strip()
+    return result if result else output[output.find('Query:'):][:500]
+
+
+def _make_feedback(obj_scores: dict, span_attrs: dict, duration_ms: float, session_id: str = None) -> str:
+    """Build actionable feedback text for the reflection_lm."""
+    status = span_attrs.get('hermes.turn.final_status', 'unknown')
+    api_calls = span_attrs.get('hermes.turn.api_call_count', 0)
+    err = span_attrs.get('hermes.turn.tool_outcomes', '')
+    parts = [
+        f"Score: {obj_scores['composite']:.3f}.",
+        f"Status: {status}.",
+        f"API calls: {api_calls}.",
+        f"Duration: {duration_ms:.0f}ms.",
+    ]
+    if err and err != 'completed':
+        parts.append(f"Outcomes: {err}.")
+    s = obj_scores
+    if s['pass'] < 0.5:
+        parts.append("PROBLEM: Prompt did not complete — tool may have hung or returned error. Add timeout handling or expected-error documentation.")
+    elif s['efficiency'] < 0.5:
+        parts.append("PROBLEM: Prompt took too long. Improve specificity to reduce LLM decision time. Add precondition checks.")
+    elif s['tool_efficiency'] < 0.5:
+        parts.append(f"PROBLEM: Too many tool calls ({api_calls}). Make prompt more directive to reduce retry loops. Add --max-turns guidance.")
+    else:
+        parts.append("OK: Completed efficiently. Minor refinements possible for edge cases.")
+    if session_id:
+        parts.append(f"Session: {session_id}.")
+    return ' '.join(parts)
+
+
 # ── OTelPromptAdapter ──────────────────────────────────────────────────────
 
 class OTelPromptAdapter:
@@ -383,12 +496,8 @@ class OTelPromptAdapter:
                 if trajectories_list is not None:
                     trajectories_list.append({
                         "data": data_inst,
-                        "full_assistant_response": response_text[:500] if response_text else "",
-                        "feedback": (
-                            f"Score: 0.000. "
-                            f"Error: {error or 'No session ID found'}. "
-                            f"Target: completed session with efficient execution."
-                        ),
+                        "full_assistant_response": _strip_hermes_banner(response_text)[:500],
+                        "feedback": _make_feedback(obj_scores, {}, duration_ms, session_id or "?"),
                     })
                 continue
 
@@ -404,15 +513,8 @@ class OTelPromptAdapter:
                 if trajectories_list is not None:
                     trajectories_list.append({
                         "data": data_inst,
-                        "full_assistant_response": response_text[:500],
-                        "feedback": (
-                            f"Score: {obj_scores['composite']:.3f}. "
-                            f"Pass: {obj_scores['pass']:.1f}, "
-                            f"Efficiency: {obj_scores['efficiency']:.3f}, "
-                            f"Tool: {obj_scores['tool_efficiency']:.3f}, "
-                            f"Tokens: {obj_scores['token_efficiency']:.3f}. "
-                            f"No OTel spans found for session {session_id}."
-                        ),
+                        "full_assistant_response": _strip_hermes_banner(response_text)[:500],
+                        "feedback": _make_feedback(obj_scores, {}, duration_ms, session_id),
                     })
                 continue
 
@@ -434,16 +536,8 @@ class OTelPromptAdapter:
             if trajectories_list is not None:
                 trajectories_list.append({
                     "data": data_inst,
-                    "full_assistant_response": response_text[:500],
-                    "feedback": (
-                        f"Score: {obj_scores['composite']:.3f}. "
-                        f"Pass: {obj_scores['pass']:.1f}, "
-                        f"Efficiency: {obj_scores['efficiency']:.3f}, "
-                        f"Tool: {obj_scores['tool_efficiency']:.3f}, "
-                        f"Tokens: {obj_scores['token_efficiency']:.3f}. "
-                        f"Session: {session_id}. "
-                        f"Target: >0.7 on all dimensions."
-                    ),
+                    "full_assistant_response": _strip_hermes_banner(response_text)[:500],
+                    "feedback": _make_feedback(obj_scores, span_attrs, duration_ms, session_id),
                 })
 
         # Run cleanup if requested (after evaluation)

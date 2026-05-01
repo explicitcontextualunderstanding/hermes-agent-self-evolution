@@ -349,9 +349,10 @@ efed32a  chore: gitignore output/ artifacts (validation run data)
 3be7f77  fix: process-level timeout on optimizer.compile()
 15ee3f0  fix: short-circuit forward() + forward result cache
 e75937c  fix: disable DSPy parallelizer when short-circuit is active
-736901b  fix(otel): return EvaluationBatch object for GEPA 0.1.1 compatibility
-154d044  feat(otel): add OTelPromptAdapter with TDD (17/17 tests passing)
-a4b3b6c  fix(otel): restore redacted constant values in otel_adapter.py
+|736901b  fix(otel): return EvaluationBatch object for GEPA 0.1.1 compatibility
+|154d044  feat(otel): add OTelPromptAdapter with TDD (17/17 tests passing)
+|a4b3b6c  fix(otel): restore redacted constant values in otel_adapter.py
+|719398c  fix(otel): actionable feedback + clean response stripping for reflection LM
 ```
 
 ---
@@ -384,6 +385,21 @@ When running GEPA 0.1.1 with OTel-backed adapter:
 - GEPA's evaluation policy calls `evaluate()` ~3× per iteration (minibatch + validation)
 - 5 iterations per prompt: ~4.5 min
 - Extrapolated to 91 prompts: ~7h raw wall time
+
+### Debugging the Reflection LM Pipeline
+
+GEPA's `reflection_lm` was silently failing to propose text changes. Systematic debugging found 3 root causes:
+
+| # | Problem | Finding | Fix |
+|---|---------|---------|-----|
+| 1 | **Pure numeric feedback** | Trajectory feedback was just numbers ("Score: 0.754. Pass: 1.0...") — reflection_lm couldn't act on it | Added `_make_feedback()` that emits qualitative diagnosis: "PROBLEM: Too many tool calls (3). Make prompt more directive to reduce retry loops." |
+| 2 | **Banner noise in trajectories** | `full_assistant_response` contained Hermes banner/logo/tool listing — reflection_lm saw no actual response text | Rewrote `_strip_hermes_banner()` to correctly parse the actual output format (find `Query:` line, extract text between the `⚕ Hermes` header and the end-of-response separator, skip tool-call notifications and session footer) |
+| 3 | **GEPA uses litellm internally** | `make_litellm_lm()` calls `litellm.completion()` directly, but kilo-proxy config is embedded in hermes binary — litellm can't route the model | Must pass `reflection_lm` as a callable wrapping `hermes chat -q` subprocess, not as a model name string |
+
+**Result:** With the hermes-based reflection_lm callable, GEPA successfully generates improved prompt variants. On "Delete the container named test-container":
+- **Original:** Basic delete instruction
+- **Reflection LM proposed:** "Delete the container named test-container using a single delete_container call with force=true. Do not list containers first. Do not retry. Report the result directly. Use at most 1 tool call and --max-turns=1."
+- GEPA **rejected it** (subsample score 1.31 vs 2.27), but the qualitative improvement is clear — the evolved text would reduce tool calls from 3 to 1.
 
 ### Files
 - `evolution/prompts/otel_adapter.py` — 543 lines, created 2026-05-01
