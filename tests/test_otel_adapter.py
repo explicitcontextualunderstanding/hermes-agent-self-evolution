@@ -63,7 +63,7 @@ class TestOTelPromptAdapter(unittest.TestCase):
     @mock.patch("evolution.prompts.otel_adapter.subprocess.run")
     @mock.patch("evolution.prompts.otel_adapter._query_otel_spans")
     def test_evaluate_returns_evaluationbatch(self, mock_query, mock_run):
-        """evaluate() must return a tuple/list with (objective_scores, scores, trajectories)."""
+        """evaluate() must return an EvaluationBatch object compatible with GEPA."""
         # Mock hermes subprocess: session ID in combined stdout+stderr
         mock_result = mock.MagicMock()
         mock_result.stdout = (
@@ -113,11 +113,14 @@ class TestOTelPromptAdapter(unittest.TestCase):
 
         result = adapter.evaluate(batch, candidate)
 
-        # Check result is a tuple/list of 3 elements
-        self.assertIsInstance(result, (tuple, list))
-        self.assertEqual(len(result), 3)
+        # Check result is an EvaluationBatch object
+        self.assertTrue(hasattr(result, 'scores'), "Expected EvaluationBatch with .scores")
+        self.assertTrue(hasattr(result, 'objective_scores'), "Expected EvaluationBatch with .objective_scores")
+        self.assertTrue(hasattr(result, 'trajectories'), "Expected EvaluationBatch with .trajectories")
 
-        objective_scores, scores, trajectories = result
+        objective_scores = result.objective_scores or []
+        scores = result.scores or []
+        trajectories = result.trajectories
 
         # Check objective_scores: list of dicts with dimension names
         self.assertIsInstance(objective_scores, list)
@@ -173,7 +176,8 @@ class TestOTelPromptAdapter(unittest.TestCase):
         adapter = self._make_adapter()
         batch = [{"input": "test", "answer": "pass"}]
         candidate = {"prompt": "Test prompt"}
-        _, scores, _ = adapter.evaluate(batch, candidate)
+        result = adapter.evaluate(batch, candidate)
+        scores = result.scores or []
 
         for s in scores:
             self.assertGreaterEqual(s, 0.0)
@@ -208,7 +212,13 @@ class TestOTelPromptAdapter(unittest.TestCase):
         adapter = self._make_adapter()
         batch = [{"input": "test", "answer": "pass"}]
         candidate = {"prompt": "Test prompt"}
-        objective_scores, scores, _ = adapter.evaluate(batch, candidate)
+        result = adapter.evaluate(batch, candidate)
+        if hasattr(result, 'objective_scores') and hasattr(result, 'scores'):
+            objective_scores = result.objective_scores or []
+            scores = result.scores or []
+            trajectories = result.trajectories
+        else:
+            objective_scores, scores, trajectories = result
 
         # 'incomplete' should have pass=0.0
         self.assertEqual(objective_scores[0]["pass"], 0.0)
@@ -246,8 +256,10 @@ class TestOTelPromptAdapter(unittest.TestCase):
         candidate = {"prompt": "Traces-enabled test"}
         result = adapter.evaluate(batch, candidate, capture_traces=True)
 
-        # Unpack
-        objective_scores, scores, trajectories = result
+        # Unpack EvaluationBatch
+        objective_scores = result.objective_scores or []
+        scores = result.scores or []
+        trajectories = result.trajectories
 
         # trajectories should be a list with len == len(batch)
         self.assertIsNotNone(trajectories)
@@ -270,7 +282,10 @@ class TestOTelPromptAdapter(unittest.TestCase):
         adapter = self._make_adapter()
         batch = [{"input": "test", "answer": "pass"}]
         candidate = {"prompt": "Timeout test"}
-        objective_scores, scores, trajectories = adapter.evaluate(batch, candidate)
+        result = adapter.evaluate(batch, candidate)
+        objective_scores = result.objective_scores or []
+        scores = result.scores or []
+        trajectories = result.trajectories
 
         for s in scores:
             self.assertEqual(s, 0.0)
@@ -289,9 +304,12 @@ class TestOTelPromptAdapter(unittest.TestCase):
         adapter = self._make_adapter()
         batch = [{"input": "test", "answer": "pass"}]
         candidate = {"prompt": "Crash test"}
-        objective_scores, scores, trajectories = adapter.evaluate(
+        result = adapter.evaluate(
             batch, candidate, capture_traces=True
         )
+        objective_scores = result.objective_scores or []
+        scores = result.scores or []
+        trajectories = result.trajectories
 
         for s in scores:
             self.assertEqual(s, 0.0)
@@ -312,7 +330,13 @@ class TestOTelPromptAdapter(unittest.TestCase):
         adapter = self._make_adapter()
         batch = [{"input": "test", "answer": "pass"}]
         candidate = {"prompt": "DB down test"}
-        objective_scores, scores, _ = adapter.evaluate(batch, candidate)
+        result = adapter.evaluate(batch, candidate)
+        if hasattr(result, 'objective_scores') and hasattr(result, 'scores'):
+            objective_scores = result.objective_scores or []
+            scores = result.scores or []
+            trajectories = result.trajectories
+        else:
+            objective_scores, scores, trajectories = result
 
         # Should still return valid scores (graceful degradation)
         for s in scores:
@@ -335,7 +359,13 @@ class TestOTelPromptAdapter(unittest.TestCase):
         adapter = self._make_adapter()
         batch = [{"input": "test", "answer": "pass"}]
         candidate = {"prompt": "No session test"}
-        objective_scores, scores, _ = adapter.evaluate(batch, candidate)
+        result = adapter.evaluate(batch, candidate)
+        if hasattr(result, 'objective_scores') and hasattr(result, 'scores'):
+            objective_scores = result.objective_scores or []
+            scores = result.scores or []
+            trajectories = result.trajectories
+        else:
+            objective_scores, scores, trajectories = result
 
         for s in scores:
             self.assertEqual(s, 0.0)
@@ -373,7 +403,13 @@ class TestOTelPromptAdapter(unittest.TestCase):
         adapter = self._make_adapter()
         batch = [{"input": "test", "answer": "pass"}]
         candidate = {"prompt": "Scoring test"}
-        objective_scores, scores, _ = adapter.evaluate(batch, candidate)
+        result = adapter.evaluate(batch, candidate)
+        if hasattr(result, 'objective_scores') and hasattr(result, 'scores'):
+            objective_scores = result.objective_scores or []
+            scores = result.scores or []
+            trajectories = result.trajectories
+        else:
+            objective_scores, scores, trajectories = result
 
         obj = objective_scores[0]
         # pass = 1.0 (completed)
@@ -419,7 +455,13 @@ class TestOTelPromptAdapter(unittest.TestCase):
         batch = [{"input": "test", "answer": "pass"}]
         candidate = {"prompt": "Timed out test"}
 
-        objective_scores, scores, _ = adapter.evaluate(batch, candidate)
+        result = adapter.evaluate(batch, candidate)
+        if hasattr(result, 'objective_scores') and hasattr(result, 'scores'):
+            objective_scores = result.objective_scores or []
+            scores = result.scores or []
+            trajectories = result.trajectories
+        else:
+            objective_scores, scores, trajectories = result
         obj = objective_scores[0]
 
         # pass = 0.0 (not completed)

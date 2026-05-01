@@ -450,12 +450,19 @@ class OTelPromptAdapter:
         if cleanup:
             self._run_cleanup()
 
-        return (objective_scores_list, scores_list, trajectories_list)
+        # GEPA 0.1.1 expects EvaluationBatch object (not tuple)
+        from gepa.core.adapter import EvaluationBatch
+        return EvaluationBatch(
+            outputs=scores_list,
+            scores=scores_list,
+            trajectories=trajectories_list if trajectories_list else None,
+            objective_scores=objective_scores_list if objective_scores_list else None,
+        )
 
     def make_reflective_dataset(
         self,
         candidate: dict[str, str],
-        eval_batch: tuple,
+        eval_batch: Any,  # EvaluationBatch from gepa.core.adapter
         components_to_update: list[str],
     ) -> dict:
         """Build concise feedback for the reflection_lm to propose improvements.
@@ -466,7 +473,7 @@ class OTelPromptAdapter:
         Parameters
         ----------
         candidate: dict mapping component name -> prompt text
-        eval_batch: tuple (objective_scores, scores, trajectories) from evaluate()
+        eval_batch: EvaluationBatch object from evaluate()
         components_to_update: list of component names to update
 
         Returns
@@ -476,7 +483,12 @@ class OTelPromptAdapter:
         prompt_text = next(iter(candidate.values()))
         comp = components_to_update[0]
 
-        objective_scores, scores, trajectories = eval_batch
+        # Handle both EvaluationBatch and legacy tuple format
+        if hasattr(eval_batch, 'trajectories'):
+            trajectories = eval_batch.trajectories
+            objective_scores = eval_batch.objective_scores or []
+        else:
+            objective_scores, _, trajectories = eval_batch
         items = []
 
         if trajectories:
