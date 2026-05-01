@@ -349,4 +349,42 @@ efed32a  chore: gitignore output/ artifacts (validation run data)
 3be7f77  fix: process-level timeout on optimizer.compile()
 15ee3f0  fix: short-circuit forward() + forward result cache
 e75937c  fix: disable DSPy parallelizer when short-circuit is active
+736901b  fix(otel): return EvaluationBatch object for GEPA 0.1.1 compatibility
+154d044  feat(otel): add OTelPromptAdapter with TDD (17/17 tests passing)
+a4b3b6c  fix(otel): restore redacted constant values in otel_adapter.py
 ```
+
+---
+
+## 8. OTel-Backed Prompt Evolution (Plan 123, Phases 1-2)
+
+### Problem
+The heuristic rubric (clarity, resilience, self-containment) used by Plan 122's GEPA evolution had **zero correlation** with real backend outcomes. Prompts that scored +0.12 higher on the rubric produced identical backend behavior. The OTel pipeline existed (from Plan 122) but wasn't plugged into the evolution loop.
+
+### Fix — `evolution/prompts/otel_adapter.py`
+
+| Layer | Mechanism | Impact |
+|-------|-----------|--------|
+| **OTelPromptAdapter** | Evaluates prompts by running them through `hermes chat -q`, extracting session_id, then querying `otel_spans` in PostgreSQL for real timing data | Replaces heuristic LLM-as-judge with real backend pass/fail + timing |
+| **Scoring formula** | `composite = pass(50%) + efficiency(20%) + tool_efficiency(20%) + token_efficiency(10%)` | Multi-dimensional score normalized to [0,1] |
+| **EvaluationBatch return** | GEPA 0.1.1 requires `EvaluationBatch` dataclass, not raw tuple (breaking change from earlier GEPA versions) | Compatible with installed GEPA v0.1.1 |
+| **Session ID correlation** | Uses `session_id` from `hermes chat -q` output (not trace_id injection) to correlate prompts to OTel traces | Avoids dependency on unimplemented trace_id injection feature |
+
+### Empirical Validation (Phase 2 A/B)
+
+30 live agent traces analyzed:
+- **PASS** (27 traces): avg OTel composite **0.828** (range 0.680–0.939)
+- **FAIL** (3 traces): avg OTel composite **0.126** (range 0.100–0.179)
+- **Discrimination: +0.702** — OTel clearly separates working from broken prompts
+
+### GEPA Integration Findings (Phase 3 Canary)
+
+When running GEPA 0.1.1 with OTel-backed adapter:
+- Each evaluation: ~15s (one `hermes chat -q` call + OTel query)
+- GEPA's evaluation policy calls `evaluate()` ~3× per iteration (minibatch + validation)
+- 5 iterations per prompt: ~4.5 min
+- Extrapolated to 91 prompts: ~7h raw wall time
+
+### Files
+- `evolution/prompts/otel_adapter.py` — 543 lines, created 2026-05-01
+- `tests/test_otel_adapter.py` — 508 lines, 17/17 tests passing, created 2026-05-01
