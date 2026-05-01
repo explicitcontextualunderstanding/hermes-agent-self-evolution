@@ -14,6 +14,7 @@ Usage:
     objective_scores, scores, trajectories = result
 """
 
+import functools
 import json
 import logging
 import re
@@ -83,9 +84,28 @@ def _normalize(value: float) -> float:
 # ── Scoring functions ──────────────────────────────────────────────────────
 
 def _score_pass(span_attrs: dict) -> float:
-    """Pass/fail: 1.0 if final_status == 'completed' else 0.0."""
+    """Graded pass/fail (P1.4): 1.0 clean, 0.5 tool errors but recovered, 0.0 timeout/crash.
+
+    Uses OTel span `hermes.turn.tool_outcomes` for error detection:
+    - 1.0: final_status == 'completed' and outcomes is empty or 'completed'
+    - 0.5: final_status == 'completed' but outcomes contain error strings
+    - 0.0: final_status != 'completed' (timeout, crash) or no spans
+    """
     status = span_attrs.get("hermes.turn.final_status", "")
-    return 1.0 if status == "completed" else 0.0
+    if status != "completed":
+        return 0.0
+
+    outcomes = span_attrs.get("hermes.turn.tool_outcomes", "")
+    if not outcomes or outcomes.strip() == "completed":
+        return 1.0
+
+    # Check for error indicators in outcomes
+    error_indicators = ("error", "fail", "timeout", "exception", "not_found",
+                         "TOOL_NOT_FOUND", "internalError", "status_code")
+    if any(indicator in outcomes.lower() for indicator in error_indicators):
+        return 0.5
+
+    return 1.0
 
 
 def _score_efficiency(span_attrs: dict, duration_ms: float = 0.0) -> float:
@@ -391,7 +411,71 @@ def _make_feedback(obj_scores: dict, span_attrs: dict, duration_ms: float, sessi
     return ' '.join(parts)
 
 
+# ── Hermes LanguageModel factory (P1.6) ─────────────────────────────────────
+
+def make_hermes_lm(
+    hermes_bin: str = DEFAULT_HERMES_BIN,
+    profile: str = DEFAULT_PROFILE,
+    max_turns: int = 1,
+    timeout: int = 60,
+) -> callable:
+    """Create a GEPA-compatible LanguageModel callable that uses hermes CLI.
+
+    GEPA's `make_litellm_lm()` can't route to kilo-proxy (proxy config is
+    embedded in the hermes binary). This factory produces a LanguageModel
+    protocol-compatible callable wrapping `hermes chat -q`.
+
+    Usage:
+        adapter = OTelPromptAdapter(...)
+        hermes_lm = make_hermes_lm()
+        result = gepa.optimize(
+            adapter=adapter,
+            reflection_lm=hermes_lm,
+            ...
+        )
+    """
+
+    def _hermes_lm(prompt: str | list[dict]) -> str:
+        """Call hermes CLI and return stripped response text."""
+        if isinstance(prompt, list):
+            prompt_text = json.dumps(prompt)
+        else:
+            prompt_text = prompt
+
+        r = subprocess.run(
+            [hermes_bin, "-p", profile, "chat", "-q", prompt_text,
+             "--max-turns", str(max_turns)],
+            capture_output=True, text=True, timeout=timeout,
+        )
+
+        # Strip hermes wrapper from response
+        raw = r.stdout + r.stderr
+        lines = raw.split('\n')
+        content = []
+        in_resp = False
+        for line in lines:
+            s = line.strip()
+            if '─' in s and len(s.strip('─ ')) >= 3 and '╭' not in s and '╰' not in s:
+                if not in_resp:
+                    in_resp = True
+                    continue
+                else:
+                    break
+            if in_resp and s and not s.startswith(('┊', '⚡', 'Resume', 'Session:',
+                                                     'Duration:', '[hermes-otel]', 'Messages:')):
+                content.append(s)
+
+        return '\n'.join(content).strip()
+
+    return _hermes_lm
+
+
 # ── OTelPromptAdapter ──────────────────────────────────────────────────────
+
+# LRU cache for repeated evaluations of identical prompt text (P1.3)
+_evaluation_cache: dict[str, dict] = {}
+_EVAL_CACHE_MAXSIZE = 128
+
 
 class OTelPromptAdapter:
     """GEPA adapter that evaluates prompts by running them through Hermes Agent
@@ -461,6 +545,21 @@ class OTelPromptAdapter:
             - trajectories: list[dict] or None — per-example traces
         """
         prompt_text = next(iter(candidate.values()))
+
+        # P1.3: Cache check — return cached result if same prompt text evaluated
+        # with same settings within the same adapter lifecycle.
+        # Only cache non-trace evaluations (capture_traces=False) which is the
+        # common case for GEPA's subsample and valset comparisons.
+        _cache_key = hash(prompt_text)
+        if not capture_traces and _cache_key in _evaluation_cache:
+            cached = _evaluation_cache[_cache_key]
+            from gepa.core.adapter import EvaluationBatch
+            return EvaluationBatch(
+                outputs=cached["scores"],
+                scores=cached["scores"],
+                trajectories=None,
+                objective_scores=cached["objective_scores"] if cached["objective_scores"] else None,
+            )
 
         objective_scores_list: list[dict[str, float]] = []
         scores_list: list[float] = []
@@ -543,6 +642,17 @@ class OTelPromptAdapter:
         # Run cleanup if requested (after evaluation)
         if cleanup:
             self._run_cleanup()
+
+        # P1.3: Cache the result for repeat evaluations of the same prompt
+        if not capture_traces:
+            _evaluation_cache[_cache_key] = {
+                "objective_scores": objective_scores_list,
+                "scores": scores_list,
+            }
+            # Evict oldest if over maxsize
+            if len(_evaluation_cache) > _EVAL_CACHE_MAXSIZE:
+                oldest = next(iter(_evaluation_cache))
+                del _evaluation_cache[oldest]
 
         # GEPA 0.1.1 expects EvaluationBatch object (not tuple)
         from gepa.core.adapter import EvaluationBatch
