@@ -547,18 +547,21 @@ class OTelPromptAdapter:
         prompt_text = next(iter(candidate.values()))
 
         # P1.3: Cache check — return cached result if same prompt text evaluated
-        # with same settings within the same adapter lifecycle.
-        # Only cache non-trace evaluations (capture_traces=False) which is the
-        # common case for GEPA's subsample and valset comparisons.
+        # within the same adapter lifecycle.
+        # The cache stores per-item scores, so it works regardless of batch size.
+        # GEPA evaluates with different batch sizes (1 for subsample, 3+ for valset)
+        # and the cache adapts by repeating the cached per-item score N times.
         _cache_key = hash(prompt_text)
         if not capture_traces and _cache_key in _evaluation_cache:
             cached = _evaluation_cache[_cache_key]
+            n = len(batch)
             from gepa.core.adapter import EvaluationBatch
             return EvaluationBatch(
-                outputs=cached["scores"],
-                scores=cached["scores"],
+                outputs=[cached["scores"]] * n,
+                scores=[cached["scores"]] * n,
                 trajectories=None,
-                objective_scores=cached["objective_scores"] if cached["objective_scores"] else None,
+                objective_scores=([cached["objective_scores"]] * n
+                                  if cached.get("objective_scores") else None),
             )
 
         objective_scores_list: list[dict[str, float]] = []
@@ -643,11 +646,15 @@ class OTelPromptAdapter:
         if cleanup:
             self._run_cleanup()
 
-        # P1.3: Cache the result for repeat evaluations of the same prompt
+        # P1.3: Cache the result for repeat evaluations of the same prompt.
+        # Store only the first item's score (batch-size independent) so the
+        # cache works when GEPA evaluates with different batch sizes.
         if not capture_traces:
+            first_score = scores_list[0] if scores_list else 0.0
+            first_obj = objective_scores_list[0] if objective_scores_list else {}
             _evaluation_cache[_cache_key] = {
-                "objective_scores": objective_scores_list,
-                "scores": scores_list,
+                "objective_scores": first_obj,
+                "scores": first_score,
             }
             # Evict oldest if over maxsize
             if len(_evaluation_cache) > _EVAL_CACHE_MAXSIZE:
