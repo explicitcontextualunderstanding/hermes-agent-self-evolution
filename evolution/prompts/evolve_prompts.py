@@ -338,6 +338,7 @@ def evolve_tier(tier_num: int, inventory: list) -> dict:
                 total_improvement += delta
                 prompts_evolved += 1
 
+                evolved_sections.append(section)
                 evolved_sections.append(evolved_text)
                 if i + 1 < len(sections):
                     i += 2

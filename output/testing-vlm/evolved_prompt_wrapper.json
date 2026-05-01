@@ -1,26 +1,5 @@
 {
-  "signature_doc": "Run the golden MCAP validation test (Rung 17) to verify Scene Graph F1 >= 0.7 threshold.",
-  "signature_instructions": "Run the golden MCAP validation test (Rung 17) to verify Scene Graph F1 >= 0.7 threshold.",
-  "demos": [
-    {
-      "skill_instructions": "\n\n# === SKILL.md ===\n\n---\nname: testing-vlm\ndescription: |\n Test VLM pipeline on Jetson Orin Nano (rungs 13-18). Use when: running VLM CI tests,\n debugging VLM/Nav2 integration, Cloudflare Worker issu...",
-      "task_input": "Run golden MCAP validation test for rung 17 - verify Scene Graph F1 >= 0.7....",
-      "output": "Let me check the current status of rung 17 and prerequisites:..."
-    },
-    {
-      "skill_instructions": "\n\n# === SKILL.md ===\n\n---\nname: testing-vlm\ndescription: |\n Test VLM pipeline on Jetson Orin Nano (rungs 13-18). Use when: running VLM CI tests,\n debugging VLM/Nav2 integration, Cloudflare Worker issu...",
-      "task_input": "Verify the Cloudflare Worker health endpoint is responding and the NIM API tunnel is working....",
-      "output": "# VLM Health Check - Cloudflare Worker & NIM Tunnel Verification\n\n## Checking Cloudflare Worker Health\n\n```bash\nHEALTH=$(curl -s https://mcap-nim-shaper.kieran-3e9.workers.dev/health)\necho \"Version: $..."
-    },
-    {
-      "skill_instructions": "\n\n# === SKILL.md ===\n\n---\nname: testing-vlm\ndescription: |\n Test VLM pipeline on Jetson Orin Nano (rungs 13-18). Use when: running VLM CI tests,\n debugging VLM/Nav2 integration, Cloudflare Worker issu...",
-      "task_input": "Download the test_mcap MCAP file from Zot and replay it while querying the VLM to get a scene description....",
-      "output": "```bash\n# Step 1: Get the running workload pod\nPOD=$(kubectl get pods -n isaac-ros -l app.kubernetes.io/component=workload \\\n  --field-selector=status.phase=Running -o name 2>/dev/null | sed 's|pod/||..."
-    },
-    {
-      "skill_instructions": "\n\n# === SKILL.md ===\n\n---\nname: testing-vlm\ndescription: |\n Test VLM pipeline on Jetson Orin Nano (rungs 13-18). Use when: running VLM CI tests,\n debugging VLM/Nav2 integration, Cloudflare Worker issu...",
-      "task_input": "Run multi-scenario VLM test (rung 18) across all 4 scenarios: office, warehouse, hallway, kitchen....",
-      "output": "```bash\n# Check current kubectl context and verify prerequisites\nkubectl config current-context\n```\n\n**Output:**\n```\nkubectl context: nano2\n```\n\nNow let me verify the prerequisites and run the multi-s..."
-    }
-  ]
+  "signature_doc": "Complete a task following the provided skill instructions.\n\nYou are an AI agent following specific skill instructions to complete a task.\nRead the skill instructions carefully and follow the procedure described.",
+  "signature_instructions": "Complete a task following the provided skill instructions.\n\nYou are an AI agent following specific skill instructions to complete a task.\nRead the skill instructions carefully and follow the procedure described.",
+  "demos": []
 }

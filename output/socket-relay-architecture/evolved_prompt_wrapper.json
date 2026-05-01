@@ -1,26 +1,5 @@
 {
   "signature_doc": "Complete a task following the provided skill instructions.\n\nYou are an AI agent following specific skill instructions to complete a task.\nRead the skill instructions carefully and follow the procedure described.",
   "signature_instructions": "Complete a task following the provided skill instructions.\n\nYou are an AI agent following specific skill instructions to complete a task.\nRead the skill instructions carefully and follow the procedure described.",
-  "demos": [
-    {
-      "skill_instructions": "\n\n# === SKILL.md ===\n\n# Skill: socket-relay-architecture\n\n## Overview\n\nBypass Apple Container's `vmnet` TCP routing bug using Unix Domain Sockets (UDS) and host-mediated socat relays. This architectur...",
-      "task_input": "Check the status of all socat relays...",
-      "output": "Let me check the status of all socat relays by running the socat-relay-manager.sh script with the status command.\n\n```bash\n./.appcontainer/scripts/socat-relay-manager.sh status\n```\n\nThis will show the..."
-    },
-    {
-      "skill_instructions": "\n\n# === SKILL.md ===\n\n# Skill: socket-relay-architecture\n\n## Overview\n\nBypass Apple Container's `vmnet` TCP routing bug using Unix Domain Sockets (UDS) and host-mediated socat relays. This architectur...",
-      "task_input": "Configure docker-compose.yml to connect hub container to database through host relay...",
-      "output": "# docker-compose.yml - Hub to Database via Host Relay\n\n```yaml\nservices:\n  honcho-db:\n    image: walg-db:latest\n    command: postgres -c unix_socket_directories='/var/run/postgresql'\n    volumes:\n    ..."
-    },
-    {
-      "skill_instructions": "\n\n# === SKILL.md ===\n\n# Skill: socket-relay-architecture\n\n## Overview\n\nBypass Apple Container's `vmnet` TCP routing bug using Unix Domain Sockets (UDS) and host-mediated socat relays. This architectur...",
-      "task_input": "Test relay manually - verify TCP port 5433 on host forwards to Unix socket...",
-      "output": "The manual relay test has been completed. Here's the verification summary:\n\n**Test Results:**\n1. **Host LAN IP**: Retrieved successfully via `discover-host-ip.sh`\n2. **Port 5433 Status**: Checked for ..."
-    },
-    {
-      "skill_instructions": "\n\n# === SKILL.md ===\n\n# Skill: socket-relay-architecture\n\n## Overview\n\nBypass Apple Container's `vmnet` TCP routing bug using Unix Domain Sockets (UDS) and host-mediated socat relays. This architectur...",
-      "task_input": "PostgreSQL container is running but connection fails with 'could not connect to server' error...",
-      "output": "# PostgreSQL Connection Troubleshooting\n\nThe \"could not connect to server\" error typically means the socket relay chain is broken. Follow these diagnostic steps:\n\n## Step 1: Verify Host LAN IP\n```bash..."
-    }
-  ]
+  "demos": []
 }
