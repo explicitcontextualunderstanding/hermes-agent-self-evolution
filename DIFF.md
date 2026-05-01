@@ -401,6 +401,16 @@ GEPA's `reflection_lm` was silently failing to propose text changes. Systematic 
 - **Reflection LM proposed:** "Delete the container named test-container using a single delete_container call with force=true. Do not list containers first. Do not retry. Report the result directly. Use at most 1 tool call and --max-turns=1."
 - GEPA **rejected it** (subsample score 1.31 vs 2.27), but the qualitative improvement is clear — the evolved text would reduce tool calls from 3 to 1.
 
+### Phase 1 Fixes (P1.3, P1.4, P1.6) — Score Variance Mitigation
+
+| Fix | File | Impact |
+|-----|------|--------|
+| **P1.3: Evaluation cache** | `otel_adapter.py` — module-level `_evaluation_cache` dict (maxsize 128) | Caches (scores, objective_scores) by prompt hash for non-trace evaluations. Eliminates variance between GEPA's subsample and valset calls on the same text. |
+| **P1.4: Graded pass scoring** | `otel_adapter.py` — `_score_pass()` rewritten | Replaces binary pass/fail with 3-level: 1.0 clean, 0.5 tool errors, 0.0 timeout/crash. Uses OTel span `attributes->>'hermes.turn.tool_outcomes'` for error detection. |
+| **P1.6: `make_hermes_lm()`** | `otel_adapter.py` — new factory function | Creates GEPA-compatible LanguageModel callable wrapping `hermes chat -q`. Bypasses litellm routing issue to kilo-proxy. |
+
+**Tests:** 17/17 passing. Soft pass scoring validated across 5 test cases (clean, tool errors, timeout, no-spans, TOOL_NOT_FOUND).
+
 ### Files
-- `evolution/prompts/otel_adapter.py` — 543 lines, created 2026-05-01
-- `tests/test_otel_adapter.py` — 508 lines, 17/17 tests passing, created 2026-05-01
+- `evolution/prompts/otel_adapter.py` — 675 lines (+132 lines Phase 1 fixes)
+- `tests/test_otel_adapter.py` — 508 lines, 17/17 tests passing
