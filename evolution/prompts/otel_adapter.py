@@ -17,8 +17,10 @@ Usage:
 import functools
 import json
 import logging
+import os
 import re
 import subprocess
+import sys
 import time
 from pathlib import Path
 from typing import Any, Optional
@@ -79,6 +81,39 @@ def _clip(value: float, lo: float = 0.0, hi: float = 1.0) -> float:
 def _normalize(value: float) -> float:
     """Normalize a score to [0, 1]. Assumes input is already roughly in range."""
     return _clip(value, 0.0, 1.0)
+
+
+# ── Prompt Validator Integration ────────────────────────────────────────────
+# Path to compose-pkl's prompt_validator.py for cross-repo validation.
+# Override via VALIDATOR_PATH env var.
+DEFAULT_VALIDATOR_PATH = os.environ.get(
+    "VALIDATOR_PATH",
+    "/Users/kieranlal/workspace/compose-pkl/scripts/prompt_validator.py",
+)
+
+
+def _run_prompt_validator(prompt_text: str) -> dict:
+    """Run prompt_validator.py and return validation result.
+
+    Returns dict with score, tool_names_found, errors, summary.
+    Returns empty validation (score=1.0) if validator not found.
+    """
+    validator = Path(DEFAULT_VALIDATOR_PATH)
+    if not validator.exists():
+        return {"score": 1.0, "tool_names_found": [], "errors": [],
+                "summary": "Validator not available", "valid_parameters": True}
+
+    try:
+        r = subprocess.run(
+            [sys.executable, str(validator), "--json", prompt_text],
+            capture_output=True, text=True, timeout=5,
+        )
+        if r.returncode == 0:
+            return json.loads(r.stdout)
+    except (subprocess.TimeoutExpired, json.JSONDecodeError, Exception):
+        pass
+    return {"score": 1.0, "tool_names_found": [], "errors": [],
+            "summary": "Validator error", "valid_parameters": True}
 
 
 # ── Scoring functions ──────────────────────────────────────────────────────
@@ -568,6 +603,31 @@ class OTelPromptAdapter:
         scores_list: list[float] = []
         trajectories_list: Optional[list[dict]] = [] if capture_traces else None
 
+        # P2.1: Run prompt validator — fast-fail on hallucinated tools
+        validation = _run_prompt_validator(prompt_text)
+        has_hallucinated_tools = any("UNKNOWN_TOOL" in e for e in validation.get("errors", []))
+        if has_hallucinated_tools:
+            for _ in batch:
+                obj = {"composite": 0.0, "pass": 0.0, "efficiency": 0.0,
+                       "tool_efficiency": 0.0, "token_efficiency": 0.0}
+                objective_scores_list.append(obj)
+                scores_list.append(0.0)
+            if trajectories_list is not None:
+                for data_inst in batch:
+                    trajectories_list.append({
+                        "data": data_inst,
+                        "full_assistant_response": "",
+                        "feedback": f"VALIDATION FAILED: {validation['summary']}",
+                    })
+            # Cache zero result and return immediately
+            from gepa.core.adapter import EvaluationBatch
+            _evaluation_cache[_cache_key] = {"objective_scores": obj, "scores": 0.0}
+            return EvaluationBatch(
+                outputs=scores_list, scores=scores_list,
+                trajectories=trajectories_list or None,
+                objective_scores=objective_scores_list,
+            )
+
         for i, data_inst in enumerate(batch):
             # Run the prompt through Hermes
             hermes_result = _run_hermes(
@@ -636,10 +696,13 @@ class OTelPromptAdapter:
             scores_list.append(obj_scores["composite"])
 
             if trajectories_list is not None:
+                fb = _make_feedback(obj_scores, span_attrs, duration_ms, session_id)
+                if validation.get("tool_names_found") and validation.get("score", 1.0) < 1.0:
+                    fb += f" TOOL_ERRORS: {validation['summary']}"
                 trajectories_list.append({
                     "data": data_inst,
                     "full_assistant_response": _strip_hermes_banner(response_text)[:500],
-                    "feedback": _make_feedback(obj_scores, span_attrs, duration_ms, session_id),
+                    "feedback": fb,
                 })
 
         # Run cleanup if requested (after evaluation)
