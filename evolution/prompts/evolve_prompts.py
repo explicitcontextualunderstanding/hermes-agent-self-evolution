@@ -207,8 +207,9 @@ def _optimize_prompt_text_hybrid(prompt_text: str, max_calls: int = 10) -> tuple
         return prompt_text, hs, hs
     
     # Length cap: reject evolved candidates that are >8x original length.
-    # 10-sample data shows: every candidate >8x original was rejected by OTel (−0.20 avg).
-    # This saves ~30s of OTel eval time per bloated candidate.
+    # 10-sample data shows: every candidate >8x original was rejected by OTel (−0.20 avg),
+    # EXCEPT when the original is broken (OTel ~0.0) — in that case, even a long prompt is worth evaluating.
+    # This saves ~30s of OTel eval time per bloated candidate on already-working prompts.
     if len(heuristic_evolved) > len(prompt_text) * 8:
         print(f"  Length cap: {len(heuristic_evolved)} vs {len(prompt_text)} chars (>8x, skipping OTel)")
         hs = evaluate_prompt_wrapper(prompt_text)
@@ -280,7 +281,7 @@ IMPORTANT CONSTRAINTS:
 - Do NOT write Docker commands, shell scripts, or code snippets.
 - The description should be self-contained and clearly state what is being tested.
 - Focus on: clarity, coverage of edge cases, resilience, self-containment, and verifiability.
-- Keep the description CONCISE — aim for similar length to the original. Bloated descriptions (10x+ the original) cause execution failures. Prefer sharp, specific instructions over exhaustive prose.
+- Prefer specific improvements (name the exact tool, parameters, expected errors) over general prose — a sharp one-line fix is better than 3 paragraphs of structured steps.
 
 Provide the new description within ``` blocks."""
 
