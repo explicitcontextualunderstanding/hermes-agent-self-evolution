@@ -525,8 +525,18 @@ def make_hermes_lm(
         result = gepa.optimize(
             adapter=adapter,
             reflection_lm=hermes_lm,
+            max_metric_calls=10,  # MINIMUM 8 for OTel adapter (2 init + 2 valset + 2 reflection + buffer)
             ...
         )
+
+    IMPORTANT: The OTel adapter requires a higher max_metric_calls budget than
+    the heuristic adapter because each evaluate() call takes ~15s (hermes CLI
+    invocation + OTel DB query). With trainset size 2 and valset size 2:
+    -  4 calls consumed by initial eval + valset
+    -  2 calls for reflection + re-evolution
+    -  2+ calls buffer for GEPA internal accounting
+    Use max_metric_calls >= 10 for reliability. Below 8, GEPA exhausts budget
+    before calling reflection_lm, causing 0% mutation rate.
     """
 
     def _hermes_lm(prompt: str | list[dict]) -> str:

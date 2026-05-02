@@ -160,10 +160,12 @@ COMPOSE_PKL = Path("/Users/kieranlal/workspace/compose-pkl")
 EVIDENCE_LOG = COMPOSE_PKL / "docs" / "evolve-evidence.jsonl"
 
 # Size-aware iteration budgets (DIFF.md §8.4)
+# Iterations * 2 = max_metric_calls for GEPA. Must be >= 10 for reflection_lm to fire.
 TIER_BUDGETS = {
     1: {"doc": P1, "prompts": (1, 47), "iterations": 5, "label": "Tier 1: Container Lifecycle"},
-    2: {"doc": P2, "prompts": (48, 68), "iterations": 3, "label": "Tier 2: Advanced Orchestration"},
-    3: {"doc": P4, "prompts": (69, 91), "iterations": 3, "label": "Tier 3: Host-Native Lane"},
+    2: {"doc": P2, "prompts": (48, 68), "iterations": 5, "label": "Tier 2: Advanced Orchestration"},
+    3: {"doc": P4, "prompts": (69, 91), "iterations": 5, "label": "Tier 3: Host-Native Lane"},
+    4: {"doc": P4, "prompts": (92, 121), "iterations": 5, "label": "Tier 4: Infrastructure (Networks, Volumes, Images, Pods, Compose)"},
 }
 
 
@@ -179,39 +181,87 @@ def evaluate_prompt_wrapper(prompt_text: str) -> float:
 
 
 def optimize_prompt_text(prompt_text: str, tools: list[str], max_calls: int = 10) -> tuple[str, float, float]:
-    """Optimize a single prompt using GEPA with a heuristic adapter.
+    """Optimize a single prompt — hybrid approach.
 
-    Uses a custom HeuristicPromptAdapter that scores prompts via the rubric
-    directly (no LLM calls for evaluation). GEPA's reflection_lm proposes
-    new prompt variants through the kilo-proxy.
+    Phase 1: Generate candidate with heuristic evolution (fast, ~60s)
+    Phase 2: Validate candidate vs original with OTel backend (one eval each, ~30s)
+    Phase 3: Accept only if OTel composite score improves
+
+    This combines the speed of heuristic search with the accuracy of
+    real backend measurement.
     """
+    # Phase 1: Heuristic evolution to generate candidate
+    return _optimize_prompt_text_hybrid(prompt_text, max_calls)
+
+
+def _optimize_prompt_text_hybrid(prompt_text: str, max_calls: int = 10) -> tuple[str, float, float]:
+    """Hybrid optimization: heuristic GEPA + OTel validation."""
+    from evolution.prompts.otel_adapter import OTelPromptAdapter
+
+    # Phase 1: Generate candidate with heuristic GEPA
+    heuristic_evolved, _, _ = _optimize_prompt_text_heuristic(prompt_text, max_calls)
+    
+    if heuristic_evolved == prompt_text:
+        # No candidate generated — nothing to validate
+        hs = evaluate_prompt_wrapper(prompt_text)
+        return prompt_text, hs, hs
+    
+    # Phase 2: OTel A/B validation
+    batch = [{"input": "eval", "answer": "pass"}]
+    adapter = OTelPromptAdapter(hermes_timeout=180, max_turns=10, cleanup_prompt=None)
+    
+    # Score original
+    adapter.evaluate(batch, {"prompt": prompt_text},
+                     run_suffix=f"hybrid_orig_{hash(prompt_text) % 10000}",
+                     cleanup=True)
+    # Run again fresh after cleanup to get clean score
+    r1 = adapter.evaluate(batch, {"prompt": prompt_text},
+                          run_suffix=f"hybrid_a_{hash(prompt_text) % 10000}")
+    orig_score = r1.scores[0]
+    
+    # Cleanup, then score evolved
+    adapter._run_cleanup()
+    r2 = adapter.evaluate(batch, {"prompt": heuristic_evolved},
+                          run_suffix=f"hybrid_b_{hash(heuristic_evolved) % 10000}")
+    evo_score = r2.scores[0]
+    
+    hs = evaluate_prompt_wrapper(prompt_text)
+    evo_hs = evaluate_prompt_wrapper(heuristic_evolved)
+    
+    if evo_score > orig_score:
+        print(f"  OTel validated: +{evo_score - orig_score:.3f} improvement")
+        return heuristic_evolved, hs, evo_hs
+    else:
+        print(f"  OTel rejected: {evo_score:.3f} vs {orig_score:.3f} (keeping original)")
+        return prompt_text, hs, hs
+
+
+def _optimize_prompt_text_heuristic(prompt_text: str, max_calls: int = 10) -> str:
+    """Generate candidate with heuristic GEPA (fast, no LLM calls for eval)."""
+    from evolution.prompts.otel_adapter import make_hermes_lm
+
     seed = {"prompt": prompt_text}
-    # GEPA needs at least 2 training examples for pareto tracking
     dataset = [
         {"input": "eval", "answer": "pass", "additional_context": {}},
         {"input": "eval", "answer": "pass", "additional_context": {}},
     ]
 
-    # Custom adapter: evaluates prompts heuristically (no LLM call)
     adapter = HeuristicPromptAdapter(
         evaluator_fn=lambda text: max(0.0, min(1.0, evaluate_prompt_wrapper(text))),
     )
 
-    # Proxy model for reflection_lm (proposes prompt variants)
-    model_name = "openai/nvidia-proxy/deepseek-ai/deepseek-v4-flash"
+    reflection_lm = make_hermes_lm(max_turns=1, timeout=90)
 
-    # Custom reflection prompt: tells the LLM this is a TEST DESCRIPTION,
-    # not an LLM system instruction (prevents Docker-command generation)
     REFLECTION_PROMPT = """I am optimizing a test scenario description for MCP (Model Context Protocol) tool testing.
 
 Current test description:
 ```
-<curr_instructions>
+<curr_param>
 ```
 
 The following are rubric evaluations of the current description, including dimensional scores and feedback on what should be improved:
 ```
-<inputs_outputs_feedback>
+<side_info>
 ```
 
 Your task is to write an IMPROVED test scenario description.
@@ -230,12 +280,37 @@ Provide the new description within ``` blocks."""
             seed_candidate=seed,
             trainset=dataset,
             adapter=adapter,
-            reflection_lm=model_name,
+            reflection_lm=reflection_lm,
             reflection_prompt_template=REFLECTION_PROMPT,
             max_metric_calls=max_calls,
             display_progress_bar=True,
         )
         evolved_text = result.best_candidate.get("prompt", prompt_text)
+        # Post-process: strip meta-commentary prose that GEPA's extractor missed.
+        # The reflection LM often outputs analysis before the actual test description.
+        # Find the first line that looks like a real test instruction.
+        import re
+        TEST_VERBS = r'(?:Create|Pull|Tag|Push|Build|List|Start|Stop|Delete|Inspect|Exec|'
+        TEST_VERBS += r'Execute|Restore|Validate|Check|Attempt|Run|Submit|Given|Test|'
+        TEST_VERBS += r'Verify|Clean|Prune|Rollback|Stream|Use|Call)'
+        lines = evolved_text.strip().split('\n')
+        first_instruction = -1
+        for i, line in enumerate(lines):
+            s = line.strip()
+            # Skip meta-commentary lines
+            if re.match(r"^(Based on|Here.?(?: is|'s)|Looking at|I have|The (?:following|key)|"
+                        r"This improved|Summary of|Key improvements|Dimensional|"
+                        r"Analyze the|Here are|Below is|Provide the)", s, re.I):
+                continue
+            # Check if this line starts a test instruction
+            if re.match(TEST_VERBS, s, re.I) and len(s) > 10:
+                first_instruction = i
+                break
+        if first_instruction > 0:
+            evolved_text = '\n'.join(lines[first_instruction:]).strip()
+            m_block = re.search(r'```(?:\w+)?\n(.+?)```', evolved_text, re.DOTALL)
+            if m_block:
+                evolved_text = m_block.group(1).strip()
     except Exception as e:
         print(f"  GEPA optimize failed: {e}")
         evolved_text = prompt_text
@@ -417,7 +492,7 @@ def main():
     parser = argparse.ArgumentParser(description="Evolve compose-pkl MCP test prompts using GEPA")
     parser.add_argument("--dry-run", action="store_true", help="Validate setup without optimizing")
     parser.add_argument("--single-prompt", type=int, default=None, help="Evolve a single prompt (G1 canary)")
-    parser.add_argument("--tier", type=str, default=None, choices=["1", "2", "3", "all"], help="Tier to evolve")
+    parser.add_argument("--tier", type=str, default=None, choices=["1", "2", "3", "4", "all"], help="Tier to evolve")
     parser.add_argument("--evidence-file", type=str, default=str(EVIDENCE_LOG), help="Path for evidence log")
 
     args = parser.parse_args()
