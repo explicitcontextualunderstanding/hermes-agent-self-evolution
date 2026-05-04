@@ -672,6 +672,17 @@ def evolve_single_prompt(prompt_num: int, inventory: list) -> dict:
     original_text = prompt["text"]
     tools = prompt["tools"]
 
+    # ── Dead Man's Switch: monitor per-prompt wall time ─────────────
+    try:
+        from evolution.utils.stop_condition import GEPAStopper
+        _stopper = getattr(evolve_single_prompt, '_stopper', None)
+        if _stopper is None:
+            _stopper = GEPAStopper(max_seconds_per_prompt=1200)
+            evolve_single_prompt._stopper = _stopper
+        _stopper.start_prompt(str(prompt_num))
+    except ImportError:
+        _stopper = None
+
     print(f"\n{'='*60}")
     print(f"Canary: evolving prompt #{prompt_num} ({prompt['title']})")
     print(f"{'='*60}")
@@ -683,6 +694,13 @@ def evolve_single_prompt(prompt_num: int, inventory: list) -> dict:
 
     evolved_text, _, evolved_score = optimize_prompt_text(original_text, tools, max_calls=6,
                                                            proxy_state=getattr(_current_args, 'proxy_state', False))
+
+    # ── Dead Man's Switch: check if we timed out during optimization ──
+    if _stopper is not None:
+        if _stopper.check():
+            print(f"  ⏱️  Stopper triggered — prompt #{prompt_num} exceeded limit.")
+            evolved_text = original_text
+            evolved_score = original_score
 
     # ── Quality gate: reject evolved text with reflective/trace leakage ──
     try:
@@ -717,6 +735,11 @@ def evolve_single_prompt(prompt_num: int, inventory: list) -> dict:
         "evaluator": "proxy_state" if getattr(_current_args, 'proxy_state', False) else "heuristic",
     }
     log_evidence(evidence)
+
+    # ── Dead Man's Switch: signal prompt completion ─────────────────
+    if _stopper is not None:
+        _stopper.end_prompt()
+
     return evidence
 
 
