@@ -178,35 +178,36 @@ def _parameterize_names(prompt_text: str, suffix: str) -> str:
 # ── Scoring functions ──────────────────────────────────────────────────────
 
 def _score_pass(span_attrs: dict) -> float:
-    """Graded pass/fail (P1.4): 1.0 clean, 0.5 tool errors but recovered, 0.0 timeout/crash.
+    """Graded pass/fail (P1.4): 1.0 clean, 0.5 partial/tool errors, 0.0 no execution.
 
-    Uses OTel span `hermes.turn.tool_outcomes` for error detection:
-    - 1.0: final_status == 'completed' and outcomes is empty or 'completed'
-    - 0.5: final_status == 'completed' but outcomes show genuine failures
-    - 0.0: final_status != 'completed' (timeout, crash) or no spans
+    Uses OTel span attributes for execution quality:
+    - 1.0: final_status == 'completed' and tool calls were made
+    - 0.5: Tool calls were made but agent hit budget (incomplete)
+    - 0.0: No tool calls or session didn't start (hung/crash)
 
-    CRITICAL FIX: The hermes-otel plugin's `tool_outcomes` field often contains
-    the literal string "error" even for SUCCESSFUL executions (e.g., when testing
-    error-handling paths like delete_container on a non-existent container).
-    The primary signal is `final_status == "completed"` — if the agent finished
-    normally and made tool calls, the execution succeeded.
+    CRITICAL: The hermes-otel plugin sets final_status to "incomplete"
+    when the agent hits its iteration budget — this is a NORMAL termination
+    for complex prompts, not a failure. The primary signal is whether the
+    agent made at least one tool call (api_call_count > 0).
     """
-    status = span_attrs.get("hermes.turn.final_status", "")
     api_calls = int(span_attrs.get("hermes.turn.api_call_count", 0) or 0)
+    status = span_attrs.get("hermes.turn.final_status", "")
+    session_completed = span_attrs.get("hermes.session.completed", False)
 
-    # Primary signal: agent completed normally with tool calls
+    # Primary signal: agent made tool calls and completed
     if status == "completed" and api_calls > 0:
         return 1.0
 
-    # Completed but no tool calls — empty success
-    if status == "completed":
+    # Partial success: agent made tool calls but didn't formally complete
+    # (iteration budget reached, complex multi-step prompt)
+    if api_calls > 0:
         return 0.5
 
-    # Iteration budget reached is a normal termination, not a failure
-    if span_attrs.get("hermes.turn.budget_exhausted", False):
+    # Session completed flag (alternative completion signal)
+    if session_completed:
         return 0.5
 
-    # Everything else (timeout, crash, internal error) = failure
+    # No tool calls and no completion = genuine failure
     return 0.0
 
 
