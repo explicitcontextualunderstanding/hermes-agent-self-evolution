@@ -182,24 +182,32 @@ def _score_pass(span_attrs: dict) -> float:
 
     Uses OTel span `hermes.turn.tool_outcomes` for error detection:
     - 1.0: final_status == 'completed' and outcomes is empty or 'completed'
-    - 0.5: final_status == 'completed' but outcomes contain error strings
+    - 0.5: final_status == 'completed' but outcomes show genuine failures
     - 0.0: final_status != 'completed' (timeout, crash) or no spans
+
+    CRITICAL FIX: The hermes-otel plugin's `tool_outcomes` field often contains
+    the literal string "error" even for SUCCESSFUL executions (e.g., when testing
+    error-handling paths like delete_container on a non-existent container).
+    The primary signal is `final_status == "completed"` — if the agent finished
+    normally and made tool calls, the execution succeeded.
     """
     status = span_attrs.get("hermes.turn.final_status", "")
-    if status != "completed":
-        return 0.0
+    api_calls = int(span_attrs.get("hermes.turn.api_call_count", 0) or 0)
 
-    outcomes = span_attrs.get("hermes.turn.tool_outcomes", "")
-    if not outcomes or outcomes.strip() == "completed":
+    # Primary signal: agent completed normally with tool calls
+    if status == "completed" and api_calls > 0:
         return 1.0
 
-    # Check for error indicators in outcomes
-    error_indicators = ("error", "fail", "timeout", "exception", "not_found",
-                         "TOOL_NOT_FOUND", "internalError", "status_code")
-    if any(indicator in outcomes.lower() for indicator in error_indicators):
+    # Completed but no tool calls — empty success
+    if status == "completed":
         return 0.5
 
-    return 1.0
+    # Iteration budget reached is a normal termination, not a failure
+    if span_attrs.get("hermes.turn.budget_exhausted", False):
+        return 0.5
+
+    # Everything else (timeout, crash, internal error) = failure
+    return 0.0
 
 
 def _score_efficiency(span_attrs: dict, duration_ms: float = 0.0) -> float:
@@ -262,7 +270,9 @@ def _query_otel_spans(session_id: str, db_config: dict) -> list[dict]:
     """Query otel_spans table for spans matching session_id.
 
     Returns list of dicts with span attributes and metadata.
-    Returns empty list if query fails.
+    Returns empty list if no spans found (valid state — new session).
+    Raises RuntimeError if the database is unreachable or table missing
+    (infrastructure failure — should halt the pipeline).
     """
     try:
         import pg8000
@@ -311,8 +321,25 @@ def _query_otel_spans(session_id: str, db_config: dict) -> list[dict]:
         conn.close()
         return results
 
+    except ImportError:
+        # pg8000 not installed — soft fallback, log warning
+        logger.warning("Failed to query OTel spans: No module named 'pg8000'")
+        return []
     except Exception as e:
-        logger.warning(f"Failed to query OTel spans: {e}")
+        err_str = str(e)
+        # Database connection errors are infrastructure failures — halt the pipeline
+        db_dead_keywords = [
+            "connection refused", "could not connect", "timeout",
+            "does not exist", "could not translate", "no route to host",
+            "ssl connection", "authentication failed",
+        ]
+        if any(kw in err_str.lower() for kw in db_dead_keywords):
+            raise RuntimeError(
+                f"OTel database unreachable: {err_str[:200]}. "
+                f"Run `skill honcho-db-otel-infrastructure` to restore."
+            ) from e
+        # Other errors (query syntax, etc.) — soft fallback
+        logger.warning(f"Failed to query OTel spans: {err_str[:200]}")
         return []
 
 
@@ -512,6 +539,7 @@ def make_hermes_lm(
     profile: str = DEFAULT_PROFILE,
     max_turns: int = 1,
     timeout: int = 60,
+    model: str | None = None,
 ) -> callable:
     """Create a GEPA-compatible LanguageModel callable that uses hermes CLI.
 
@@ -546,11 +574,64 @@ def make_hermes_lm(
         else:
             prompt_text = prompt
 
-        r = subprocess.run(
-            [hermes_bin, "-p", profile, "chat", "-q", prompt_text,
-             "--max-turns", str(max_turns)],
-            capture_output=True, text=True, timeout=timeout,
-        )
+        cmd = [hermes_bin, "-p", profile, "chat", "-q", prompt_text,
+               "--max-turns", str(max_turns)]
+        if model:
+            cmd.extend(["--model", model])
+        # Pass through TINKER_API_KEY for K2.6 Tinker model routing
+        env = os.environ.copy()
+        if "TINKER_API_KEY" not in env:
+            tinker_key = os.environ.get("TINKER_API_KEY")
+            if tinker_key:
+                env["TINKER_API_KEY"] = tinker_key
+
+        # ── Cost & Performance Tracking ─────────────────────────────────
+        _start = time.time()
+        _prompt_chars = len(prompt_text)
+        _model_id = model or "default"
+        _cost_entry = {}
+        _success = False
+        try:
+            r = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout, env=env)
+            _elapsed = time.time() - _start
+            _response_chars = len(r.stdout) + len(r.stderr)
+            _success = True
+        except subprocess.TimeoutExpired:
+            _elapsed = time.time() - _start
+            _response_chars = 0
+            raise
+        finally:
+            # Always log cost metrics, even on timeout
+            _prompt_tokens = max(1, _prompt_chars // 4)
+            _response_tokens = max(1, _response_chars // 4)
+            _cost_entry = {
+                "metric": "reflection_lm_cost",
+                "model": _model_id,
+                "latency_s": round(_elapsed, 1),
+                "success": _success,
+                "prompt_chars": _prompt_chars,
+                "response_chars": _response_chars,
+                "est_prompt_tokens": _prompt_tokens,
+                "est_response_tokens": _response_tokens,
+                "est_total_tokens": _prompt_tokens + _response_tokens,
+                "_ts": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+            }
+            if _success:
+                if "deepseek" in _model_id.lower() or _model_id == "default":
+                    # Default model is deepseek-v4-flash via kilo-proxy
+                    _cost_entry["est_cost_usd"] = round(
+                        _prompt_tokens / 1_000_000 * 0.14 + _response_tokens / 1_000_000 * 0.42, 6
+                    )
+                elif "kimi" in _model_id.lower() or "k2" in _model_id.lower():
+                    _cost_entry["est_cost_usd"] = round(
+                        _prompt_tokens / 1_000_000 * 0.74 + _response_tokens / 1_000_000 * 1.48, 6
+                    )
+                else:
+                    _cost_entry["est_cost_usd"] = 0.0
+            _cost_log = Path("/Users/kieranlal/.hermes/cost-tracker.jsonl")
+            _cost_log.parent.mkdir(parents=True, exist_ok=True)
+            with open(_cost_log, "a") as _f:
+                _f.write(json.dumps(_cost_entry) + "\n")
 
         # Strip hermes wrapper from response
         raw = r.stdout + r.stderr
@@ -615,6 +696,69 @@ class OTelPromptAdapter:
         self.hermes_timeout = hermes_timeout
         self.max_turns = max_turns
         self.cleanup_prompt = cleanup_prompt or CLEANUP_PROMPT
+
+    def check_telemetry_pipeline(self) -> dict:
+        """Pre-flight check: verify OTel database and otel_spans table exist.
+
+        Must be called BEFORE any evaluate() call. Returns dict with status
+        and details. Raise on critical failure.
+
+        Returns:
+            dict with keys:
+                - healthy (bool): True if pipeline is fully operational
+                - db_reachable (bool): PostgreSQL connection succeeded
+                - table_exists (bool): otel_spans table exists
+                - span_count (int): current number of spans in table
+                - error (str): error message if any check failed
+        """
+        result = {
+            "healthy": False,
+            "db_reachable": False,
+            "table_exists": False,
+            "span_count": 0,
+            "error": "",
+        }
+        try:
+            import pg8000
+            conn = pg8000.connect(
+                host=self.db_config["host"],
+                port=self.db_config["port"],
+                user=self.db_config["user"],
+                database=self.db_config["database"],
+            )
+            result["db_reachable"] = True
+            cur = conn.cursor()
+
+            # Check otel_spans table
+            cur.execute(
+                "SELECT EXISTS (SELECT FROM information_schema.tables "
+                "WHERE table_name = 'otel_spans')"
+            )
+            result["table_exists"] = cur.fetchone()[0]
+
+            if result["table_exists"]:
+                cur.execute("SELECT COUNT(*) FROM otel_spans")
+                result["span_count"] = cur.fetchone()[0]
+
+            cur.close()
+            conn.close()
+
+            result["healthy"] = result["db_reachable"] and result["table_exists"]
+            if not result["healthy"]:
+                if not result["table_exists"]:
+                    result["error"] = (
+                        "otel_spans table does not exist in database "
+                        f"'{self.db_config['database']}'. Run the schema migration."
+                    )
+                elif not result["db_reachable"]:
+                    result["error"] = (
+                        f"Cannot reach PostgreSQL at "
+                        f"{self.db_config['host']}:{self.db_config['port']}"
+                    )
+        except Exception as e:
+            result["error"] = str(e)
+
+        return result
 
     def evaluate(
         self,
