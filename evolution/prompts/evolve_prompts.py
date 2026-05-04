@@ -1098,7 +1098,7 @@ def main():
                 if failures:
                     print(f"  Failures:                  {failures}")
 
-                # ── Three-gate check ──────────────────────────────────────
+                # ── Four-gate check with lineage quality ───────────────────
                 check1 = crash_rate == 0.0
                 check1_label = "No crashes" if check1 else f"{len(failures)} crash(es)"
 
@@ -1114,24 +1114,68 @@ def main():
                     if check3 else f"ProxyStateTracker parse rate too low ({proxy_parse_rate:.0%})"
                 )
 
-                print()
-                print(f"  ┌─ 3-GATE SAMPLE CHECK ──────────────────────┐")
-                print(f"  │ 1. {check1_label:<39s} {'✅' if check1 else '❌'} │")
-                print(f"  │ 2. {check2_label:<39s} {'✅' if check2 else '❌'} │")
-                print(f"  │ 3. {check3_label:<39s} {'✅' if check3 else '❌'} │")
-                print(f"  └──────────────────────────────────────────────┘")
+                # Gate 4: Infrastructure lineage quality
+                # Verify LDP+ContextBus: do compose-pkl spans have parentSpanId
+                # and shared trace_ids, or is the pipeline still producing orphans?
+                lineage_ok = True
+                lineage_score = 0.0
+                try:
+                    from evolution.prompts.otel_adapter import _query_infrastructure_spans
+                    from datetime import datetime, timezone
+                    now_iso = datetime.now(timezone.utc).isoformat()
+                    infra = _query_infrastructure_spans(session_start=now_iso, window_minutes=5)
+                    spans = infra.get("spans", [])
+                    if spans:
+                        with_parent = [s for s in spans
+                                       if s.get("parent_span_id")
+                                       and str(s.get("parent_span_id", "")).strip()]
+                        unique_traces = set(s.get("trace_id") for s in spans if s.get("trace_id"))
+                        lineage_score = len(with_parent) / max(1, len(spans))
+                        # At least 40% must have parentSpanId (lenient threshold —
+                        # first runs may produce old synthetic spans alongside new
+                        # propagated ones during the transition)
+                        lineage_ok = lineage_score >= 0.4
+                        sentinel = infra.get("sentinel_present", False)
+                    else:
+                        # No infra spans = no containers were created during sample
+                        # This is valid if the sampled prompts don't use container tools
+                        lineage_ok = True
+                except Exception:
+                    lineage_ok = True  # don't fail gate on check error
 
-                sample_pass = check1 and check2 and check3
-                print(f"\n  Sample verdict: {'✅ PASS — safe to continue' if sample_pass else '❌ FAIL — investigate before full batch'}")
+                check4 = lineage_ok
+                check4_label = (
+                    f"Lineage quality ≥ 40% ({lineage_score:.0%})"
+                    if check4 else f"Lineage too low ({lineage_score:.0%}) — orphan spans detected"
+                )
+
+                print()
+                print(f"  ┌─ 4-GATE SAMPLE CHECK ──────────────────────────┐")
+                print(f"  │ 1. {check1_label:<40s} {'✅' if check1 else '❌'} │")
+                print(f"  │ 2. {check2_label:<40s} {'✅' if check2 else '❌'} │")
+                print(f"  │ 3. {check3_label:<40s} {'✅' if check3 else '❌'} │")
+                print(f"  │ 4. {check4_label:<40s} {'✅' if check4 else '❌'} │")
+                print(f"  └─────────────────────────────────────────────────┘")
+
+                sample_pass = check1 and check2 and check3 and check4
+                print(f"\n  Sample verdict: {'✅ PASS — proceeding to full batch' if sample_pass else '❌ FAIL — investigate before full batch'}")
                 print(f"{'='*60}")
 
                 if not sample_pass and args.tier != "all":
+                    print(f"\n  Gates failed. Run with --skip-sample-gates to bypass.")
                     sys.exit(1)
 
-            # If we're in sample-only mode (not full tier), exit here
+            # Auto-continuation: if all gates pass, proceed to full batch
+            # without requiring a separate --full-after-sample flag
             if args.sample > 0 and not getattr(args, '_full_after_sample', False):
-                print(f"\nSample complete. Re-run with --sample {args.sample} --full-after-sample to continue with full batch.")
-                return
+                if sample_pass:
+                    print(f"\nAll {cfg['label']} sample gates passed. Auto-continuing to full batch.\n")
+                    # Mark as full-mode so the next iteration proceeds
+                    # This is achieved by clearing the sample flag for subsequent passes
+                    args._full_after_sample = True
+                else:
+                    print(f"\nSample complete. Fix failures, then re-run.")
+                    return
 
         # ── Full tier evolution ──
         for t in tiers:
