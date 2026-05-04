@@ -252,8 +252,8 @@ def _query_infrastructure_spans(session_start: str | None = None,
         params: list = []
         if session_start:
             time_filter = (
-                "AND start_time BETWEEN %s::timestamptz - interval '%s minutes' "
-                "AND %s::timestamptz + interval '%s minutes'"
+                "AND start_time BETWEEN %s::timestamptz - (%s * interval '1 minute') "
+                "AND %s::timestamptz + (%s * interval '1 minute')"
             )
             params = [session_start, window_minutes, session_start, window_minutes]
 
