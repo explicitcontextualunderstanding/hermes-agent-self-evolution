@@ -221,20 +221,23 @@ def _query_infrastructure_spans(session_start: str | None = None,
                                   window_minutes: int = 3) -> list[dict]:
     """Query compose-pkl infrastructure spans near a session time window.
 
-    Since hermes-agent and compose-pkl use independent trace_ids, correlation
-    is done by time proximity. Returns container.create, .start, .stop, .delete
-    spans whose start_time falls within ±window_minutes of the given time.
+    Two-tier correlation:
+      Tier 1 (exact): If a pod.realize span exists in the time window,
+        all spans sharing its trace_id are retrieved. This gives exact
+        attribution instead of statistical proximity.
+      Tier 2 (time-window fallback): Same as Phase 1 — returns
+        container.create, .start, .stop, .delete spans whose start_time
+        falls within ±window_minutes of the session timestamp.
 
-    This is a statistical correlation — not exact attribution — but it
-    provides ground-truth evidence about whether the Apple Container runtime
-    was actually invoked during a prompt evaluation.
+    Also returns lifecycle metadata: pod trace_ids, harness ingestion
+    sentinel presence, and lifecycle completeness flags.
 
     Args:
         session_start: ISO timestamp string. If None, returns recent spans.
         window_minutes: Time window in minutes on each side.
 
     Returns:
-        list of dicts with infrastructure span data.
+        list of dicts with infrastructure span data plus sentinel flags.
     """
     import pg8000
     db = _get_db_config()
@@ -245,20 +248,70 @@ def _query_infrastructure_spans(session_start: str | None = None,
         )
         cur = conn.cursor()
 
+        time_filter = ""
+        params: list = []
+        if session_start:
+            time_filter = (
+                "AND start_time BETWEEN %s::timestamptz - interval '%s minutes' "
+                "AND %s::timestamptz + interval '%s minutes'"
+            )
+            params = [session_start, window_minutes, session_start, window_minutes]
+
+        # ── Step 1: Find pod.realize spans and extract trace_ids ─────────
+        pod_query = f"""
+            SELECT trace_id, attributes::text
+            FROM otel_spans
+            WHERE service_name = 'compose-pkl'
+              AND name = 'pod.realize'
+              {time_filter}
+            ORDER BY start_time DESC
+            LIMIT 10
+        """
+        cur.execute(pod_query, params)
+        pod_rows = cur.fetchall()
+        pod_trace_ids: list[str] = []
+        pod_metadata: list[dict] = []
+        for row in pod_rows:
+            tid = row[0]
+            if tid:
+                pod_trace_ids.append(str(tid))
+            attrs = {}
+            if row[1]:
+                try:
+                    attrs = json.loads(row[1]) if isinstance(row[1], str) else row[1]
+                except (json.JSONDecodeError, TypeError):
+                    pass
+            pod_metadata.append({"trace_id": tid, **attrs})
+
+        # ── Step 2: Exact trace_id correlation (Tier 1) ──────────────────
+        exact_spans: list[tuple] = []
+        if pod_trace_ids:
+            placeholders = ",".join("%s" for _ in pod_trace_ids)
+            trace_query = f"""
+                SELECT name, span_id, trace_id, start_time, end_time,
+                       duration_ms, status_code, attributes::text
+                FROM otel_spans
+                WHERE service_name = 'compose-pkl'
+                  AND trace_id IN ({placeholders})
+                ORDER BY start_time ASC
+            """
+            cur.execute(trace_query, pod_trace_ids)
+            exact_spans = cur.fetchall()
+
+        # ── Step 3: Time-window fallback (Tier 2) ────────────────────────
         if session_start:
             cur.execute(
-                """
+                f"""
                 SELECT name, span_id, trace_id, start_time, end_time,
                        duration_ms, status_code, attributes::text
                 FROM otel_spans
                 WHERE service_name = 'compose-pkl'
                   AND name IN ('container.create', 'container.start',
                                'container.stop', 'container.delete')
-                  AND start_time BETWEEN %s::timestamptz - interval '%s minutes'
-                                     AND %s::timestamptz + interval '%s minutes'
+                  {time_filter}
                 ORDER BY start_time ASC
                 """,
-                (session_start, window_minutes, session_start, window_minutes),
+                params,
             )
         else:
             cur.execute(
@@ -274,12 +327,35 @@ def _query_infrastructure_spans(session_start: str | None = None,
                 """
             )
 
+        time_window_spans = cur.fetchall()
+
+        # ── Step 4: Deduplicate (Tier 1 spans take priority) ─────────────
+        exact_keys = set()
+        combined: list[tuple] = list(exact_spans)
+        for row in exact_spans:
+            exact_keys.add((row[1], row[2]))  # (span_id, trace_id)
+        for row in time_window_spans:
+            if (row[1], row[2]) not in exact_keys:
+                combined.append(row)
+
+        # ── Step 5: Check for harness.trace.ingest sentinel ──────────────
+        sentinel_query = f"""
+            SELECT COUNT(*) as cnt
+            FROM otel_spans
+            WHERE service_name = 'compose-pkl'
+              AND name = 'harness.trace.ingest'
+              {time_filter}
+        """
+        cur.execute(sentinel_query, params)
+        sentinel_present = cur.fetchone()[0] > 0
+
+        # ── Step 6: Parse results from combined (deduplicated) spans ─────
         results = []
         col_names = [
             "name", "span_id", "trace_id", "start_time", "end_time",
             "duration_ms", "status_code", "attributes",
         ]
-        for row in cur.fetchall():
+        for row in combined:
             d = dict(zip(col_names, row))
             # Parse attributes if JSON string
             if isinstance(d.get("attributes"), str):
@@ -291,10 +367,15 @@ def _query_infrastructure_spans(session_start: str | None = None,
 
         cur.close()
         conn.close()
-        return results
+        return {
+            "spans": results,
+            "sentinel_present": sentinel_present,
+            "pod_trace_ids": pod_trace_ids,
+            "pod_metadata": pod_metadata,
+        }
     except Exception as e:
         logger.warning(f"Failed to query infrastructure spans: {e}")
-        return []
+        return {"spans": [], "sentinel_present": False, "pod_trace_ids": [], "pod_metadata": []}
 
 
 def _score_infrastructure(infra_spans: list[dict]) -> dict:
@@ -303,14 +384,22 @@ def _score_infrastructure(infra_spans: list[dict]) -> dict:
     Returns dict with:
       - containers_created: count of container.create spans
       - containers_started: count of container.start spans
+      - containers_stopped: count of container.stop spans
+      - containers_deleted: count of container.delete spans
       - creation_success: True if at least one container.create completed
       - boot_success: True if at least one container.start completed
+      - cleanup_success: True if at least one container.stop or .delete completed
+      - lifecycle_pass: lifecycle completeness score (0.0-1.0)
+          Full cycle (create → start → stop/delete): 1.0
+          Partial (create → start, no cleanup): 0.5
+          Orphaned (create only, no start): 0.0
       - infra_pass: combined infrastructure pass score (0.0-1.0)
       - avg_create_ms: average container creation duration
       - avg_boot_ms: average container boot duration
     """
     creates = [s for s in infra_spans if s["name"] == "container.create"]
     starts = [s for s in infra_spans if s["name"] == "container.start"]
+    stops = [s for s in infra_spans if s["name"] == "container.stop"]
     deletes = [s for s in infra_spans if s["name"] == "container.delete"]
 
     # A successful create has status_code=0 (OK) or is non-null
@@ -328,19 +417,33 @@ def _score_infrastructure(infra_spans: list[dict]) -> dict:
         avg_boot_ms = sum(durations) / len(durations)
 
     # Infrastructure pass score: did containers actually get created?
-    # Higher weight on creation than boot (create must succeed before start)
     infra_pass = 0.0
     if creates_ok > 0:
         infra_pass += 0.6
     if starts_ok > 0:
         infra_pass += 0.4
 
+    # Lifecycle pass: does the prompt clean up after itself?
+    # Full cycle = create → start → (stop OR delete)
+    cleanup_success = (len(stops) + len(deletes)) > 0
+    if creates_ok > 0 and starts_ok > 0 and cleanup_success:
+        lifecycle_pass = 1.0
+    elif creates_ok > 0 and starts_ok > 0:
+        lifecycle_pass = 0.5
+    elif creates_ok > 0:
+        lifecycle_pass = 0.0
+    else:
+        lifecycle_pass = 0.0
+
     return {
         "containers_created": len(creates),
         "containers_started": len(starts),
+        "containers_stopped": len(stops),
         "containers_deleted": len(deletes),
         "creation_success": creates_ok > 0,
         "boot_success": starts_ok > 0,
+        "cleanup_success": cleanup_success,
+        "lifecycle_pass": round(lifecycle_pass, 4),
         "infra_pass": round(infra_pass, 4),
         "avg_create_ms": round(avg_create_ms, 1),
         "avg_boot_ms": round(avg_boot_ms, 1),
@@ -366,13 +469,21 @@ def _compute_scores(span_attrs: dict, duration_ms: float = 0.0,
     if infra_spans:
         infra = _score_infrastructure(infra_spans)
         infra_pass = infra["infra_pass"]
+        lifecycle_pass = infra.get("lifecycle_pass", 0.0)
+
+        # Lifecycle penalty: prompts creating orphan containers get docked
+        # If there are containers but none were stopped/deleted, apply
+        # a 0.8x multiplier to the infra contribution.
+        has_containers = infra["containers_created"] > 0
+        lifecycle_mult = (0.5 + (lifecycle_pass * 0.5)) if has_containers else 1.0
+
         # Blended pass: infrastructure can boost partial successes but
         # cannot override total agent failure (0 calls = 0 pass)
         if agent_pass == 0.0 and infra_pass > 0:
             # Agent didn't execute but infra was active — partial credit
-            pass_score = min(0.5, infra_pass * 0.6)
+            pass_score = min(0.5, infra_pass * 0.6 * lifecycle_mult)
         else:
-            pass_score = max(agent_pass, infra_pass * 0.8)
+            pass_score = max(agent_pass, infra_pass * 0.8 * lifecycle_mult)
     else:
         pass_score = agent_pass
 
@@ -1073,8 +1184,33 @@ class OTelPromptAdapter:
             if span_duration > 0:
                 duration_ms = span_duration
 
-            # Compute scores from span attributes
-            obj_scores = _compute_scores(span_attrs, duration_ms)
+            # ── Tier 3: Query compose-pkl infrastructure spans ──────────────
+            # Use the span's start_time as session reference for time-window
+            # correlation with pod.realize and container.* spans.
+            infra_spans = None
+            sentinel_ok = True
+            session_start = primary_span.get("start_time")
+            if session_start:
+                try:
+                    infra_result = _query_infrastructure_spans(
+                        str(session_start), window_minutes=3
+                    )
+                    infra_spans = infra_result.get("spans", [])
+                    sentinel_ok = infra_result.get("sentinel_present", False)
+                except Exception:
+                    logger.warning("Infrastructure span query failed", exc_info=True)
+                    infra_spans = None
+
+            # If sentinel is missing within the time window, data quality is poor.
+            # Apply a confidence discount rather than rejecting entirely.
+            confidence_discount = 0.85 if not sentinel_ok else 1.0
+
+            # Compute scores from span attributes and infrastructure evidence
+            obj_scores = _compute_scores(span_attrs, duration_ms, infra_spans)
+            # Apply sentinel confidence discount to pass score
+            if confidence_discount < 1.0 and "pass" in obj_scores:
+                obj_scores["pass"] = round(obj_scores["pass"] * confidence_discount, 4)
+                obj_scores["composite"] = _score_composite(obj_scores)
             objective_scores_list.append(obj_scores)
             scores_list.append(obj_scores["composite"])
 
