@@ -673,7 +673,17 @@ class ProxyStateTracker:
     """LLM-as-a-Judge that evaluates prompts by inferring backend state
     from generated code/declarations.
 
-    Each dimension scored 0.0–1.0. Composite is equally weighted average.
+    Each dimension scored 0.0–1.0. Composite is a weighted average:
+
+      tool_correctness:   0.25  (primary: did they call the right tool?)
+      parameter_validity: 0.20  (secondary: right params?)
+      error_handling:     0.20  (resilience: edge cases covered?)
+      resource_lifecycle: 0.20  (cleanup: Rule 5 — teardown paired with create?)
+      state_agreement:    0.15  (grounding: output matches expected state?)
+
+    Weight rationale: tool_correctness gets highest weight because wrong
+    tool calls are unrecoverable. resource_lifecycle at 0.20 ensures
+    prompts leaving containers running incur a measurable penalty.
 
     The judge call uses hermes chat -q (subprocess) to route through the
     user's configured kilo-proxy — no additional API keys required.
@@ -697,6 +707,17 @@ class ProxyStateTracker:
         "state_agreement",
     ]
 
+    # Weighted composite — tool_correctness at 0.25 because wrong tool
+    # calls are unrecoverable. resource_lifecycle at 0.20 so prompts
+    # that leave containers running incur a measurable penalty.
+    DIMENSION_WEIGHTS = {
+        "tool_correctness": 0.25,
+        "parameter_validity": 0.20,
+        "error_handling": 0.20,
+        "resource_lifecycle": 0.20,
+        "state_agreement": 0.15,
+    }
+
     JUDGE_PROMPT = """You are a Proxy State Tracker for an agent evaluation system.
 Analyze the following agent prompt and its generated output code.
 
@@ -710,7 +731,7 @@ Generated output code/declarations:
 {output}
 ```
 
-Score each dimension 0.0–1.0 where 1.0 means perfect:
+Score each dimension 0.0-1.0 where 1.0 means perfect:
 
 1. tool_correctness: Did the agent call the correct MCP tool(s) for the task?
    - 1.0: Exact tool name match (create_container, delete_container, etc.)
@@ -727,10 +748,14 @@ Score each dimension 0.0–1.0 where 1.0 means perfect:
    - 0.5: Some error handling but incomplete
    - 0.0: No error handling — assumes happy path only
 
-4. resource_lifecycle: Is resource creation paired with deletion/cleanup?
-   - 1.0: Every create has matching delete (or explicit persistence intent)
-   - 0.5: Partial coverage — some resources leak
-   - 0.0: No cleanup declared
+4. resource_lifecycle: Is resource creation paired with deletion/cleanup? (Rule 5)
+   - 1.0: Every create has matching delete/stop (or explicit persistence intent).
+         Prompts that create containers MUST include cleanup instructions.
+         The scoring pipeline checks for container.stop spans in OTel.
+   - 0.5: Partial coverage — some resources leak or cleanup is conditional
+   - 0.0: No cleanup declared. Resources will leak.
+   NOTE: Shell-level cleanup (run-tests.sh) does NOT count — the agent
+         itself must call stop_container / delete_container via MCP tools.
 
 5. state_agreement: Does the output match the expected backend state?
    - Compare tool outputs against expected state transitions
@@ -912,7 +937,10 @@ before or after the JSON. If you cannot determine a dimension, default to 0.5.
                 dims[dim] = 0.5  # neutral default
 
         if dims:
-            composite = sum(dims.values()) / len(dims)
+            composite = sum(
+                dims[d] * self.DIMENSION_WEIGHTS.get(d, 0.2)
+                for d in self.DIMENSIONS
+            )
             return {
                 "dimensions": dims,
                 "composite": round(composite, 4),
@@ -931,12 +959,15 @@ before or after the JSON. If you cannot determine a dimension, default to 0.5.
             except (TypeError, ValueError):
                 validated[dim] = 0.5
 
-        # Compute composite if missing or invalid
+        # Compute weighted composite
         raw_composite = data.get("composite")
         try:
             composite = min(1.0, max(0.0, float(raw_composite)))
         except (TypeError, ValueError):
-            composite = sum(validated.values()) / len(validated)
+            composite = sum(
+                validated[d] * self.DIMENSION_WEIGHTS.get(d, 0.2)
+                for d in self.DIMENSIONS
+            )
 
         return {
             "dimensions": validated,
