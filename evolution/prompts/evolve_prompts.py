@@ -684,6 +684,25 @@ def evolve_single_prompt(prompt_num: int, inventory: list) -> dict:
     evolved_text, _, evolved_score = optimize_prompt_text(original_text, tools, max_calls=6,
                                                            proxy_state=getattr(_current_args, 'proxy_state', False))
 
+    # ── Quality gate: reject evolved text with reflective/trace leakage ──
+    try:
+        from evolution.prompts.prompt_validator import safe_write_evolved
+        accepted, sanitized_or_error = safe_write_evolved(
+            evolved_text, original_text, prompt_num,
+            max_length=1500, max_bloat_ratio=3.0,
+        )
+        if not accepted:
+            print(f"  ❌ Quality gate rejected: {sanitized_or_error[:120]}")
+            # Fall back to original text — better to keep the clean original
+            evolved_text = original_text
+            evolved_score = original_score
+        else:
+            evolved_text = sanitized_or_error
+    except ImportError:
+        pass  # validator not available
+    except Exception as e:
+        print(f"  ⚠️  Validation error (non-fatal): {e}")
+
     print(f"  Evolved score: {evolved_score:.3f} (delta: {evolved_score - original_score:+.3f})")
     print(f"  Evolved length: {len(evolved_text)} chars")
 
