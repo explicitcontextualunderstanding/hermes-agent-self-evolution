@@ -257,9 +257,9 @@ def _query_infrastructure_spans(session_start: str | None = None,
             )
             params = [session_start, window_minutes, session_start, window_minutes]
 
-        # ── Step 1: Find pod.realize spans and extract trace_ids ─────────
+        # ── Step 1: Find pod.realize spans and extract trace_ids + span_ids ─
         pod_query = f"""
-            SELECT trace_id, attributes::text
+            SELECT trace_id, span_id, attributes::text
             FROM otel_spans
             WHERE service_name = 'compose-pkl'
               AND name = 'pod.realize'
@@ -270,39 +270,54 @@ def _query_infrastructure_spans(session_start: str | None = None,
         cur.execute(pod_query, params)
         pod_rows = cur.fetchall()
         pod_trace_ids: list[str] = []
+        pod_span_ids: list[str] = []
         pod_metadata: list[dict] = []
         for row in pod_rows:
             tid = row[0]
+            sid = row[1]
             if tid:
                 pod_trace_ids.append(str(tid))
+            if sid:
+                pod_span_ids.append(str(sid))
             attrs = {}
-            if row[1]:
+            if row[2]:
                 try:
-                    attrs = json.loads(row[1]) if isinstance(row[1], str) else row[1]
+                    attrs = json.loads(row[2]) if isinstance(row[2], str) else row[2]
                 except (json.JSONDecodeError, TypeError):
                     pass
-            pod_metadata.append({"trace_id": tid, **attrs})
+            pod_metadata.append({"trace_id": tid, "span_id": sid, **attrs})
 
-        # ── Step 2: Exact trace_id correlation (Tier 1) ──────────────────
+        # ── Step 2: Exact correlation (Tier 1) via trace_id OR parent_span_id
+        #            (LDP trace_id match + ContextBus parent_span_id lineage)
         exact_spans: list[tuple] = []
+        id_filters: list[str] = []
+        id_params: list[str] = []
         if pod_trace_ids:
             placeholders = ",".join("%s" for _ in pod_trace_ids)
+            id_filters.append(f"trace_id IN ({placeholders})")
+            id_params.extend(pod_trace_ids)
+        if pod_span_ids:
+            placeholders = ",".join("%s" for _ in pod_span_ids)
+            id_filters.append(f"parent_span_id IN ({placeholders})")
+            id_params.extend(pod_span_ids)
+        if id_filters:
+            combined_filter = " OR ".join(id_filters)
             trace_query = f"""
-                SELECT name, span_id, trace_id, start_time, end_time,
+                SELECT name, span_id, trace_id, parent_span_id, start_time, end_time,
                        duration_ms, status_code, attributes::text
                 FROM otel_spans
                 WHERE service_name = 'compose-pkl'
-                  AND trace_id IN ({placeholders})
+                  AND ({combined_filter})
                 ORDER BY start_time ASC
             """
-            cur.execute(trace_query, pod_trace_ids)
+            cur.execute(trace_query, id_params)
             exact_spans = cur.fetchall()
 
         # ── Step 3: Time-window fallback (Tier 2) ────────────────────────
         if session_start:
             cur.execute(
                 f"""
-                SELECT name, span_id, trace_id, start_time, end_time,
+                SELECT name, span_id, trace_id, parent_span_id, start_time, end_time,
                        duration_ms, status_code, attributes::text
                 FROM otel_spans
                 WHERE service_name = 'compose-pkl'
@@ -316,7 +331,7 @@ def _query_infrastructure_spans(session_start: str | None = None,
         else:
             cur.execute(
                 """
-                SELECT name, span_id, trace_id, start_time, end_time,
+                SELECT name, span_id, trace_id, parent_span_id, start_time, end_time,
                        duration_ms, status_code, attributes::text
                 FROM otel_spans
                 WHERE service_name = 'compose-pkl'
@@ -352,7 +367,7 @@ def _query_infrastructure_spans(session_start: str | None = None,
         # ── Step 6: Parse results from combined (deduplicated) spans ─────
         results = []
         col_names = [
-            "name", "span_id", "trace_id", "start_time", "end_time",
+            "name", "span_id", "trace_id", "parent_span_id", "start_time", "end_time",
             "duration_ms", "status_code", "attributes",
         ]
         for row in combined:
