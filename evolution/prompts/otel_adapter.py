@@ -211,6 +211,182 @@ def _score_pass(span_attrs: dict) -> float:
     return 0.0
 
 
+def _get_db_config() -> dict:
+    """Return the default OTel database configuration."""
+    import copy
+    return copy.deepcopy(DEFAULT_DB_CONFIG)
+
+
+def _query_infrastructure_spans(session_start: str | None = None,
+                                  window_minutes: int = 3) -> list[dict]:
+    """Query compose-pkl infrastructure spans near a session time window.
+
+    Since hermes-agent and compose-pkl use independent trace_ids, correlation
+    is done by time proximity. Returns container.create, .start, .stop, .delete
+    spans whose start_time falls within ±window_minutes of the given time.
+
+    This is a statistical correlation — not exact attribution — but it
+    provides ground-truth evidence about whether the Apple Container runtime
+    was actually invoked during a prompt evaluation.
+
+    Args:
+        session_start: ISO timestamp string. If None, returns recent spans.
+        window_minutes: Time window in minutes on each side.
+
+    Returns:
+        list of dicts with infrastructure span data.
+    """
+    import pg8000
+    db = _get_db_config()
+    try:
+        conn = pg8000.connect(
+            host=db["host"], port=db["port"],
+            user=db["user"], database=db["database"],
+        )
+        cur = conn.cursor()
+
+        if session_start:
+            cur.execute(
+                """
+                SELECT name, span_id, trace_id, start_time, end_time,
+                       duration_ms, status_code, attributes::text
+                FROM otel_spans
+                WHERE service_name = 'compose-pkl'
+                  AND name IN ('container.create', 'container.start',
+                               'container.stop', 'container.delete')
+                  AND start_time BETWEEN %s::timestamptz - interval '%s minutes'
+                                     AND %s::timestamptz + interval '%s minutes'
+                ORDER BY start_time ASC
+                """,
+                (session_start, window_minutes, session_start, window_minutes),
+            )
+        else:
+            cur.execute(
+                """
+                SELECT name, span_id, trace_id, start_time, end_time,
+                       duration_ms, status_code, attributes::text
+                FROM otel_spans
+                WHERE service_name = 'compose-pkl'
+                  AND name IN ('container.create', 'container.start',
+                               'container.stop', 'container.delete')
+                ORDER BY start_time DESC
+                LIMIT 50
+                """
+            )
+
+        results = []
+        col_names = [
+            "name", "span_id", "trace_id", "start_time", "end_time",
+            "duration_ms", "status_code", "attributes",
+        ]
+        for row in cur.fetchall():
+            d = dict(zip(col_names, row))
+            # Parse attributes if JSON string
+            if isinstance(d.get("attributes"), str):
+                try:
+                    d["attributes"] = json.loads(d["attributes"])
+                except (json.JSONDecodeError, TypeError):
+                    d["attributes"] = {}
+            results.append(d)
+
+        cur.close()
+        conn.close()
+        return results
+    except Exception as e:
+        logger.warning(f"Failed to query infrastructure spans: {e}")
+        return []
+
+
+def _score_infrastructure(infra_spans: list[dict]) -> dict:
+    """Score infrastructure execution from compose-pkl spans.
+
+    Returns dict with:
+      - containers_created: count of container.create spans
+      - containers_started: count of container.start spans
+      - creation_success: True if at least one container.create completed
+      - boot_success: True if at least one container.start completed
+      - infra_pass: combined infrastructure pass score (0.0-1.0)
+      - avg_create_ms: average container creation duration
+      - avg_boot_ms: average container boot duration
+    """
+    creates = [s for s in infra_spans if s["name"] == "container.create"]
+    starts = [s for s in infra_spans if s["name"] == "container.start"]
+    deletes = [s for s in infra_spans if s["name"] == "container.delete"]
+
+    # A successful create has status_code=0 (OK) or is non-null
+    creates_ok = sum(1 for s in creates if s.get("status_code") in (0, "0", "OK", None))
+    starts_ok = sum(1 for s in starts if s.get("status_code") in (0, "0", "OK", None))
+
+    avg_create_ms = 0.0
+    if creates:
+        durations = [s.get("duration_ms", 0) or 0 for s in creates]
+        avg_create_ms = sum(durations) / len(durations)
+
+    avg_boot_ms = 0.0
+    if starts:
+        durations = [s.get("duration_ms", 0) or 0 for s in starts]
+        avg_boot_ms = sum(durations) / len(durations)
+
+    # Infrastructure pass score: did containers actually get created?
+    # Higher weight on creation than boot (create must succeed before start)
+    infra_pass = 0.0
+    if creates_ok > 0:
+        infra_pass += 0.6
+    if starts_ok > 0:
+        infra_pass += 0.4
+
+    return {
+        "containers_created": len(creates),
+        "containers_started": len(starts),
+        "containers_deleted": len(deletes),
+        "creation_success": creates_ok > 0,
+        "boot_success": starts_ok > 0,
+        "infra_pass": round(infra_pass, 4),
+        "avg_create_ms": round(avg_create_ms, 1),
+        "avg_boot_ms": round(avg_boot_ms, 1),
+    }
+
+
+def _compute_scores(span_attrs: dict, duration_ms: float = 0.0,
+                     infra_spans: list[dict] | None = None) -> dict:
+    """Compute all objective scores from span attributes and infrastructure spans.
+
+    Args:
+        span_attrs: OTel span attributes from hermes-agent.
+        duration_ms: Agent span duration.
+        infra_spans: Optional compose-pkl infrastructure spans for
+                     end-to-end execution verification.
+
+    Returns:
+        dict with pass, efficiency, tool_efficiency, token_efficiency, composite.
+    """
+    agent_pass = _score_pass(span_attrs)
+
+    # Infrastructure pass: if infra spans available, blend with agent pass
+    if infra_spans:
+        infra = _score_infrastructure(infra_spans)
+        infra_pass = infra["infra_pass"]
+        # Blended pass: infrastructure can boost partial successes but
+        # cannot override total agent failure (0 calls = 0 pass)
+        if agent_pass == 0.0 and infra_pass > 0:
+            # Agent didn't execute but infra was active — partial credit
+            pass_score = min(0.5, infra_pass * 0.6)
+        else:
+            pass_score = max(agent_pass, infra_pass * 0.8)
+    else:
+        pass_score = agent_pass
+
+    obj = {
+        "pass": pass_score,
+        "efficiency": _score_efficiency(span_attrs, duration_ms),
+        "tool_efficiency": _score_tool_efficiency(span_attrs),
+        "token_efficiency": _score_token_efficiency(span_attrs),
+    }
+    if infra_spans:
+        obj["infrastructure"] = _score_infrastructure(infra_spans)
+
+    obj["composite"] = _score_composite(obj)
+    return obj
 def _score_efficiency(span_attrs: dict, duration_ms: float = 0.0) -> float:
     """Duration efficiency: clip(1.0 - duration_ms/30000, 0, 1)."""
     # Prefer duration_ms from span, fall back to attributes
@@ -239,18 +415,6 @@ def _score_composite(obj_scores: dict) -> float:
         + W_TOOL_EFFICIENCY * obj_scores["tool_efficiency"]
         + W_TOKEN_EFFICIENCY * obj_scores["token_efficiency"]
     )
-
-
-def _compute_scores(span_attrs: dict, duration_ms: float = 0.0) -> dict:
-    """Compute all objective scores from span attributes."""
-    obj = {
-        "pass": _score_pass(span_attrs),
-        "efficiency": _score_efficiency(span_attrs, duration_ms),
-        "tool_efficiency": _score_tool_efficiency(span_attrs),
-        "token_efficiency": _score_token_efficiency(span_attrs),
-    }
-    obj["composite"] = _score_composite(obj)
-    return obj
 
 
 # ── Session ID extraction ──────────────────────────────────────────────────
