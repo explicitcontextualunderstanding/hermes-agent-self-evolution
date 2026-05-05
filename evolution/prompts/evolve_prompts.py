@@ -401,6 +401,39 @@ def _build_enriched_feedback(score: float, detail: dict,
 COMPOSE_PKL = Path("/Users/kieranlal/workspace/compose-pkl")
 EVIDENCE_LOG = COMPOSE_PKL / "docs" / "evolve-evidence.jsonl"
 
+# ── Checkpoint (durable progress) ──────────────────────────────────────────
+CHECKPOINT_DIR = Path.home() / ".hermes" / "evolution-checkpoints"
+CHECKPOINT_DIR.mkdir(parents=True, exist_ok=True)
+
+def _checkpoint_path(label: str) -> Path:
+    """Return checkpoint path for a given tier/label. Safe characters only."""
+    safe = re.sub(r'[^a-zA-Z0-9_-]', '_', label.lower())
+    return CHECKPOINT_DIR / f"checkpoint_{safe}.json"
+
+def save_checkpoint(state: dict, label: str) -> None:
+    """Write durable checkpoint after each prompt. Survives kill/reboot."""
+    path = _checkpoint_path(label)
+    state["_updated"] = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+    # Use atomic write to prevent partial-file corruption on crash
+    tmp = path.with_suffix(".tmp")
+    try:
+        with open(tmp, "w") as f:
+            json.dump(state, f, indent=2)
+        tmp.rename(path)
+    except Exception as e:
+        print(f"  ⚠️  Checkpoint write failed (non-fatal): {e}")
+
+def load_checkpoint(label: str) -> dict | None:
+    """Load checkpoint if it exists. Returns None for clean start."""
+    path = _checkpoint_path(label)
+    if path.exists():
+        try:
+            with open(path) as f:
+                return json.load(f)
+        except (json.JSONDecodeError, OSError):
+            pass
+    return None
+
 # Size-aware iteration budgets (DIFF.md §8.4)
 # Iterations * 2 = max_metric_calls for GEPA. Must be >= 10 for reflection_lm to fire.
 TIER_BUDGETS = {
@@ -772,6 +805,19 @@ def evolve_tier(tier_num: int, inventory: list) -> dict:
         if m:
             prompt_num = int(m.group(1))
             if lo <= prompt_num <= hi:
+                # ── Resume: skip prompts already completed ──────────────
+                if getattr(_current_args, 'resume', False):
+                    cp = load_checkpoint(cfg["label"])
+                    if cp and cp.get("completed_prompts") and prompt_num in cp["completed_prompts"]:
+                        print(f"  ⏭️  Skipping prompt #{prompt_num} (completed in prior run)")
+                        evolved_sections.append(section)
+                        if i + 1 < len(sections):
+                            evolved_sections.append(sections[i + 1])
+                            i += 2
+                            continue
+                        else:
+                            i += 1
+                            continue
                 # This prompt is in our tier — evolve it
                 prompt_text = sections[i + 1] if i + 1 < len(sections) else ""
                 tools = PROMPT_TOOLS.get(prompt_num, [])
@@ -784,6 +830,18 @@ def evolve_tier(tier_num: int, inventory: list) -> dict:
                 delta = evolved_score - orig_score
                 total_improvement += delta
                 prompts_evolved += 1
+
+                # ── Durable checkpoint after each prompt ────────────────
+                save_checkpoint({
+                    "tier": tier_num,
+                    "label": cfg["label"],
+                    "completed_prompts": [p for p in range(lo, prompt_num + 1)
+                                         if lo <= p <= hi],
+                    "prompts_evolved": prompts_evolved,
+                    "total_improvement": round(total_improvement, 4),
+                    "last_prompt": prompt_num,
+                    "last_delta": round(delta, 4),
+                }, cfg["label"])
 
                 evolved_sections.append(section)
                 evolved_sections.append(evolved_text)
@@ -983,6 +1041,9 @@ def main():
                         help="Run a random sample of N prompts from the target tier first. "
                              "Validates pipeline health and spot-checks improvement rate before "
                              "committing to the full batch. Default 0 = run full batch directly.")
+    parser.add_argument("--resume", action="store_true",
+                        help="Resume from last checkpoint. Skips prompts already recorded "
+                             "in the tier's checkpoint file. Safe to SIGKILL and restart.")
 
     args = parser.parse_args()
     # Store globally for propagation into optimize functions
