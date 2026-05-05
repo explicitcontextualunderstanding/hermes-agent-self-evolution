@@ -841,14 +841,14 @@ before or after the JSON. If you cannot determine a dimension, default to 0.5.
             return self.judge_lm(prompt_text)
 
         body = json.dumps({
-            "model": "nvidia-proxy/meta/llama-3.1-8b-instruct",
+            "model": "deepseek-ai/deepseek-v4-flash",
             "messages": [{"role": "user", "content": prompt_text}],
             "temperature": 0.1,
             "max_tokens": 512,
         }).encode()
 
         r = subprocess.run(
-            ["/usr/bin/curl", "-s", "--max-time", "15",
+            ["/usr/bin/curl", "-s", "--max-time", "30",
              "http://localhost:8080/v1/chat/completions",
              "-H", "Content-Type: application/json",
              "-d", body],
