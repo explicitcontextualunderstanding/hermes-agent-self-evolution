@@ -21,6 +21,7 @@ PROMPTS_DIR = COMPOSE_PKL / "docs"
 P1 = PROMPTS_DIR / "hermes-agent-backend-test-prompts.md"
 P2 = PROMPTS_DIR / "hermes-agent-backend-test-prompts-2.md"
 P4 = PROMPTS_DIR / "hermes-agent-backend-test-prompts-4.md"
+P5 = PROMPTS_DIR / "hermes-agent-backend-test-prompts-5.md"
 
 # ── Backend tool inventory (from test-results-2026-04-23) ──────────────────
 IMPLEMENTED_TOOLS = {
@@ -161,6 +162,13 @@ PROMPT_TOOLS = {
     90: ["create_container", "start_container", "get_checkpoint"],
     91: ["create_container", "get_checkpoint"],
     # 92-117: Infrastructure Utilities (Networks, Volumes, Images, Pods, Compose)
+    # ... (defined in prompts-4.md)
+    # 118-121: (placeholder for future)
+    # 122-125: Tier 5 Externalized State
+    122: ["container.list", "get_checkpoint", "reset_checkpoint", "realize_pod"],
+    123: ["container.exec", "create_container", "delete_container"],
+    124: ["container.exec", "container.list", "get_checkpoint", "create_container"],
+    125: ["container.start", "container.create", "check_action"],
     # Network Lifecycle (92-95)
     92: ["create_network"], 93: ["list_networks"],
     94: ["delete_network"], 95: ["prune_networks"],
