@@ -169,6 +169,7 @@ PROMPT_TOOLS = {
     123: ["container.exec", "create_container", "delete_container"],
     124: ["container.exec", "container.list", "get_checkpoint", "create_container"],
     125: ["container.start", "container.create", "check_action"],
+    126: ["create_slab", "list_slabs", "execute_native_model", "get_checkpoint"],
     # Network Lifecycle (92-95)
     92: ["create_network"], 93: ["list_networks"],
     94: ["delete_network"], 95: ["prune_networks"],

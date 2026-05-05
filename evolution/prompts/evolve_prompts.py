@@ -441,7 +441,7 @@ TIER_BUDGETS = {
     2: {"doc": P2, "prompts": (48, 68), "iterations": 5, "label": "Tier 2: Advanced Orchestration"},
     3: {"doc": P4, "prompts": (69, 91), "iterations": 5, "label": "Tier 3: Host-Native Lane"},
     4: {"doc": P4, "prompts": (92, 121), "iterations": 5, "label": "Tier 4: Infrastructure (Networks, Volumes, Images, Pods, Compose)"},
-    5: {"doc": P5, "prompts": (122, 125), "iterations": 5, "label": "Tier 5: Externalized State (State Artifacts, Multi-Agent Sync, Crash Recon, Permission Gates)"},
+    5: {"doc": P5, "prompts": (122, 126), "iterations": 5, "label": "Tier 5: Externalized State (State Artifacts, Multi-Agent Sync, Crash Recon, Permission Gates, Slab Protocol)"},
 }
 
 
