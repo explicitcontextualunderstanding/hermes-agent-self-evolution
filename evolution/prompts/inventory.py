@@ -321,8 +321,11 @@ def evaluate_prompt(prompt_text: str, tool_names: Optional[list[str]] = None) ->
 def parse_prompts(path: Path) -> list[dict]:
     """Parse a prompts doc into individual prompt entries with number and text."""
     content = path.read_text()
+    # Normalize: ensure every "### N." heading starts on its own line
+    # (evolution runs sometimes corrupt the document by concatenating sections)
+    content = re.sub(r"([^\n])(### \d+\.)", r"\1\n\2", content)
     # Split on ### N. heading
-    sections = re.split(r"^### (\d+)\.\s+(.+)$", content, flags=re.MULTILINE)
+    sections = re.split(r"^### (\d+)\.\s*(.+)$", content, flags=re.MULTILINE)
     prompts = []
     # sections format: [..., num, title, body, num, title, body, ...]
     i = 1
