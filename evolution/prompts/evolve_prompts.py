@@ -764,6 +764,7 @@ def evolve_single_prompt(prompt_num: int, inventory: list) -> dict:
         "evolved_score": evolved_score,
         "improvement": round(evolved_score - original_score, 4),
         "original_length": len(original_text),
+        "evolved_text": evolved_text,
         "evolved_length": len(evolved_text),
         "evaluator": "proxy_state" if getattr(_current_args, 'proxy_state', False) else "heuristic",
     }
@@ -832,9 +833,20 @@ def evolve_tier(tier_num: int, inventory: list) -> dict:
                 prompts_evolved += 1
 
                 # ── Durable checkpoint after each prompt ────────────────
+                # Saves evolved text, scores, and metadata so a killed run
+                # can be fully reconstructed from the checkpoint alone
+                # (no need to dig through log files).
                 save_checkpoint({
                     "tier": tier_num,
                     "label": cfg["label"],
+                    "prompt_num": prompt_num,
+                    "tools": tools,
+                    "baseline_score": round(orig_score, 4),
+                    "evolved_score": round(evolved_score, 4),
+                    "delta": round(delta, 4),
+                    "evolved_text": evolved_text,
+                    "evolved_length": len(evolved_text),
+                    "original_length": len(prompt_text),
                     "completed_prompts": [p for p in range(lo, prompt_num + 1)
                                          if lo <= p <= hi],
                     "prompts_evolved": prompts_evolved,
@@ -842,6 +854,18 @@ def evolve_tier(tier_num: int, inventory: list) -> dict:
                     "last_prompt": prompt_num,
                     "last_delta": round(delta, 4),
                 }, cfg["label"])
+
+                # Also log structured evidence to evolve-evidence.jsonl
+                log_evidence({
+                    "phase": f"tier-{tier_num}",
+                    "prompt_num": prompt_num,
+                    "tools": tools,
+                    "baseline_score": round(orig_score, 4),
+                    "evolved_score": round(evolved_score, 4),
+                    "improvement": round(delta, 4),
+                    "evolved_text": evolved_text,
+                    "evolved_length": len(evolved_text),
+                })
 
                 evolved_sections.append(section)
                 evolved_sections.append(evolved_text)
