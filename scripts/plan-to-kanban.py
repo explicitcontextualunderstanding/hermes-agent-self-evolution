@@ -70,7 +70,7 @@ def extract_phases(body: str) -> list[dict]:
                 }
             continue
         
-        # Detect task within phase (- [ ] or - item)
+        # Detect task within phase
         if current_phase and line.strip().startswith("-"):
             task_text = line.strip()
             if task_text.startswith("- [ ]"):
@@ -79,6 +79,22 @@ def extract_phases(body: str) -> list[dict]:
                 task_text = task_text[1:].strip()
             if task_text:
                 current_phase["tasks"].append(task_text)
+                continue
+        
+        # Detect table row task within phase
+        if current_phase and line.strip().startswith("|") and line.strip().endswith("|"):
+            cells = [c.strip() for c in line.strip().split("|")[1:-1]]
+            if len(cells) >= 2:
+                cell_0 = cells[0].strip()
+                cell_1 = cells[1].strip()
+                if not cell_0.replace("-","").strip() and not cell_1.replace("-","").strip():
+                    continue
+                if cell_0.lower() == "p" and cell_1.lower() == "task":
+                    continue
+                if re.match(r'^[Pp]?\d+\.?\d*$', cell_0):
+                    task_text = re.sub(r'\*\*(.+?)\*\*', r'\1', cell_1).strip()
+                    if task_text:
+                        current_phase["tasks"].append(task_text)
     
     if current_phase:
         phases.append(current_phase)
