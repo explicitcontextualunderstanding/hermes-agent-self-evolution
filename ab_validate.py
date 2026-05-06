@@ -24,10 +24,12 @@ logging.basicConfig(level=logging.INFO, format="%(levelname)s | %(message)s", st
 logger = logging.getLogger(__name__)
 
 # ── Paths ───────────────────────────────────────────────────────────────────
-WORKSPACE = Path("/Users/kieranlal/workspace/hermes-agent-self-evolution")
-COMPOSE_PKL = Path("/Users/kieranlal/workspace/compose-pkl")
-PROMPTS_DIR = COMPOSE_PKL / "docs"
-HERMES_BIN = "/Users/kieranlal/.hermes/hermes-agent/venv/bin/hermes"
+from evolution.env_config import COMPOSE_PKL as _CP, HERMES_HOME
+
+WORKSPACE = _CP.parent / "hermes-agent-self-evolution"
+COMPOSE_PKL = _CP
+PROMPTS_DIR = _CP / "docs"
+HERMES_BIN = str(HERMES_HOME / "hermes-agent" / "venv" / "bin" / "hermes")
 PROFILE = "coding"
 OUTPUT_FILE = WORKSPACE / "ab-otel-validation-results.jsonl"
 TEST_FILE = WORKSPACE / "ab_otel_test.py"

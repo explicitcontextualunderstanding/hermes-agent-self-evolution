@@ -17,6 +17,7 @@ Usage:
 import functools
 import json
 import logging
+import math
 import os
 import re
 import subprocess
@@ -84,11 +85,13 @@ def _normalize(value: float) -> float:
 
 
 # ── Prompt Validator Integration ────────────────────────────────────────────
+from evolution.env_config import PROMPT_SCRIPTS_DIR, COST_TRACKER
+
 # Path to compose-pkl's prompt_validator.py for cross-repo validation.
 # Override via VALIDATOR_PATH env var.
 DEFAULT_VALIDATOR_PATH = os.environ.get(
     "VALIDATOR_PATH",
-    "/Users/kieranlal/workspace/compose-pkl/scripts/prompt_validator.py",
+    str(PROMPT_SCRIPTS_DIR / "prompt_validator.py"),
 )
 
 
@@ -391,6 +394,92 @@ def _query_infrastructure_spans(session_start: str | None = None,
     except Exception as e:
         logger.warning(f"Failed to query infrastructure spans: {e}")
         return {"spans": [], "sentinel_present": False, "pod_trace_ids": [], "pod_metadata": []}
+
+
+def _measure_latency_drift() -> dict:
+    """Query last 20 container.start and container.create spans, compute mean + std
+    of duration_ms, and return a latency band.
+
+    Used by Phase 3 dynamic concurrency control: GEPA iteration pacing adjusts
+    based on the latency band to prevent M4 Neural Engine thermal throttling.
+
+    Latency bands:
+        GREEN  — std < 5ms     (stable, no cooldown needed)
+        YELLOW — 5ms ≤ std ≤ 15ms (measurable drift, insert 5s cooldown)
+        RED    — std > 15ms    (significant drift, insert 15s cooldown)
+
+    Returns:
+        dict with:
+          - latency_band: str — "GREEN", "YELLOW", or "RED"
+          - mean_ms: float — mean duration in ms
+          - std_ms: float — standard deviation of duration in ms
+          - sample_count: int — number of spans sampled (0 if none found)
+    """
+    import pg8000
+    db = _get_db_config()
+    try:
+        conn = pg8000.connect(
+            host=db["host"], port=db["port"],
+            user=db["user"], database=db["database"],
+        )
+        cur = conn.cursor()
+
+        # Fetch the 20 most recent container.start and container.create spans
+        cur.execute(
+            """
+            SELECT name, duration_ms
+            FROM otel_spans
+            WHERE service_name = 'compose-pkl'
+              AND name IN ('container.start', 'container.create')
+              AND duration_ms IS NOT NULL
+            ORDER BY start_time DESC
+            LIMIT 20
+            """
+        )
+        rows = cur.fetchall()
+        cur.close()
+        conn.close()
+
+        if not rows:
+            return {
+                "latency_band": "GREEN",
+                "mean_ms": 0.0,
+                "std_ms": 0.0,
+                "sample_count": 0,
+            }
+
+        durations = [float(row[1]) for row in rows]
+        n = len(durations)
+        mean = sum(durations) / n
+        if n > 1:
+            variance = sum((d - mean) ** 2 for d in durations) / n
+            std = math.sqrt(variance)
+        else:
+            std = 0.0
+
+        # Determine latency band
+        if std < 5.0:
+            band = "GREEN"
+        elif std <= 15.0:
+            band = "YELLOW"
+        else:
+            band = "RED"
+
+        return {
+            "latency_band": band,
+            "mean_ms": round(mean, 2),
+            "std_ms": round(std, 2),
+            "sample_count": n,
+        }
+
+    except Exception as e:
+        logger.warning(f"Failed to measure latency drift: {e}")
+        return {
+            "latency_band": "GREEN",
+            "mean_ms": 0.0,
+            "std_ms": 0.0,
+            "sample_count": 0,
+        }
 
 
 def _score_infrastructure(infra_spans: list[dict]) -> dict:
@@ -919,10 +1008,10 @@ def make_hermes_lm(
                     )
                 else:
                     _cost_entry["est_cost_usd"] = 0.0
-            _cost_log = Path("/Users/kieranlal/.hermes/cost-tracker.jsonl")
+            _cost_log = COST_TRACKER
             _cost_log.parent.mkdir(parents=True, exist_ok=True)
-            with open(_cost_log, "a") as _f:
-                _f.write(json.dumps(_cost_entry) + "\n")
+            with open(_cost_log, "a") as f:
+                f.write(json.dumps(_cost_entry) + "\n")
 
         # Strip hermes wrapper from response
         raw = r.stdout + r.stderr

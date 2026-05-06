@@ -15,7 +15,9 @@ from pathlib import Path
 
 EVIDENCE_LOG = Path(__file__).resolve().parent.parent / "compose-pkl" / "docs" / "evolve-evidence.jsonl"
 # Fallback: check compose-pkl repo
-FALLBACK = Path("/Users/kieranlal/workspace/compose-pkl/docs/evolve-evidence.jsonl")
+from evolution.env_config import EVIDENCE_LOG as _EVIDENCE_LOG
+
+FALLBACK = _EVIDENCE_LOG
 
 
 def load_evidence(path: Path) -> list[dict]:

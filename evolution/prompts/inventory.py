@@ -15,8 +15,10 @@ import json
 from pathlib import Path
 from typing import Optional
 
+from evolution.env_config import _resolve
+
 # ── Doc paths ──────────────────────────────────────────────────────────────
-COMPOSE_PKL = Path("/Users/kieranlal/workspace/compose-pkl")
+COMPOSE_PKL = _resolve("COMPOSE_PKL_DIR", str(Path.home() / "workspace" / "compose-pkl"))
 PROMPTS_DIR = COMPOSE_PKL / "docs"
 P1 = PROMPTS_DIR / "hermes-agent-backend-test-prompts.md"
 P2 = PROMPTS_DIR / "hermes-agent-backend-test-prompts-2.md"

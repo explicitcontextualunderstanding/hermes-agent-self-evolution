@@ -23,15 +23,17 @@ _control_lock = asyncio.Lock()
 
 # ── Constants ──────────────────────────────────────────────────────────
 
-HERMES_HOME = Path("/Users/kieranlal/.hermes")
-WRAPPERS_DIR = HERMES_HOME / "skills" / ".wrappers"
+from evolution.env_config import HERMES_HOME as _HH, HERMES_AGENT_REPO as _HAR
+
+HERMES_HOME = _HH
+WRAPPERS_DIR = _HH / "skills" / ".wrappers"
 HEALTH_FILE = WRAPPERS_DIR / "health.json"
 ROTATION_STATE_FILE = WRAPPERS_DIR / ".rotation_state.json"
 LOG_FILE = WRAPPERS_DIR / "batch_size_aware.log"
 LOG_FILE_PARALLEL = WRAPPERS_DIR / "batch_parallel.log"
-BATCH_SCRIPT = Path("/Users/kieranlal/workspace/nano2/scripts/evolve_batch_size_aware.sh")
-ROTATION_SCRIPT = Path("/Users/kieranlal/workspace/nano2/scripts/evolve_skill_rotation.py")
-HERMES_AGENT_REPO = Path("/Users/kieranlal/workspace/nano2")
+BATCH_SCRIPT = _HAR / "scripts" / "evolve_batch_size_aware.sh"
+ROTATION_SCRIPT = _HAR / "scripts" / "evolve_skill_rotation.py"
+HERMES_AGENT_REPO = _HAR
 AUDIT_LOG = HERMES_AGENT_REPO / ".evolution_audit.log"
 SKILLS_DIR = HERMES_AGENT_REPO / ".claude" / "skills"
 
