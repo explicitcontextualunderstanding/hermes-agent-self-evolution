@@ -748,7 +748,9 @@ def _format_error_payloads(payloads: list[dict]) -> str:
 
 
 # ── Config ─────────────────────────────────────────────────────────────────
-COMPOSE_PKL = _resolve("COMPOSE_PKL_DIR", str(Path.home() / "workspace" / "compose-pkl"))
+COMPOSE_PKL = _resolve(
+    "COMPOSE_PKL_DIR", str(Path.home() / "workspace" / "compose-pkl")
+)
 EVIDENCE_LOG = COMPOSE_PKL / "docs" / "evolve-evidence.jsonl"
 
 # PostgreSQL connection for prompt store (migrated from SQLite)
@@ -759,8 +761,11 @@ DB_PASSWORD = os.environ.get("PG_PASSWORD")
 DB_NAME = os.environ.get("PG_DATABASE", "harness_evolution")
 
 if DB_PASSWORD is None:
-    print("FATAL: PG_PASSWORD environment variable not set. "
-          "Set it before running evolution.", file=sys.stderr)
+    print(
+        "FATAL: PG_PASSWORD environment variable not set. "
+        "Set it before running evolution.",
+        file=sys.stderr,
+    )
     sys.exit(1)
 
 
@@ -769,8 +774,11 @@ def _pg_connect():
     import pg8000
 
     return pg8000.connect(
-        host=DB_HOST, port=DB_PORT, user=DB_USER,
-        password=DB_PASSWORD, database=DB_NAME,
+        host=DB_HOST,
+        port=DB_PORT,
+        user=DB_USER,
+        password=DB_PASSWORD,
+        database=DB_NAME,
     )
 
 
@@ -918,7 +926,45 @@ TIER_BUDGETS = {
 
 
 def evaluate_prompt_wrapper(prompt_text: str) -> float:
-    """Wraps the rubric evaluator. Returns composite score in [0,1]."""
+    """Wraps the rubric evaluator. Returns composite score in [0,1].
+
+    When --eval-daemon is active, routes through the persistent eval daemon
+    on port 11436. Falls back to the heuristic rubric evaluator if the daemon
+    is unreachable or returns an error.
+    """
+    # ── Daemon path: route through persistent Hermes session ──────────
+    if getattr(_current_args, "eval_daemon", False):
+        import json
+        import urllib.request
+
+        port = os.environ.get("EVAL_DAEMON_PORT", "11436")
+        try:
+            # Check health first
+            health_req = urllib.request.Request(
+                f"http://127.0.0.1:{port}/health",
+            )
+            with urllib.request.urlopen(health_req, timeout=5) as resp:
+                health = json.loads(resp.read().decode())
+
+            if health.get("status") == "ok":
+                # Daemon healthy — route through it
+                eval_req = urllib.request.Request(
+                    f"http://127.0.0.1:{port}/evaluate",
+                    data=json.dumps({"prompt": prompt_text}).encode(),
+                    headers={"Content-Type": "application/json"},
+                )
+                with urllib.request.urlopen(eval_req, timeout=120) as resp:
+                    result = json.loads(resp.read().decode())
+                composite = result.get("composite", result.get("score", 0.5))
+                return max(0.0, min(1.0, float(composite)))
+        except Exception as e:
+            print(
+                f"  Eval daemon call failed: {e} (falling back to rubric)",
+                flush=True,
+            )
+            # Fall through to rubric evaluator
+
+    # ── Rubric path (default / fallback) ──────────────────────────────
     # Infer tools from the prompt number by looking for tool-like words in prompt text.
     # Matches both underscore-separated tool names (create_container) and
     # space-separated versions (create container) that may appear in prompts.
@@ -1598,11 +1644,19 @@ def _check_system_resources(
     # 0. Reclaim memory: clean up idle/stale containers before checking
     try:
         import subprocess as _sp
+
         _sp.run(
-            [_resolve("COMPOSE_PKL_DIR",
-                       str(Path.home() / "workspace" / "compose-pkl"))
-             / "scripts" / "container_cleanup.py"],
-            capture_output=True, text=True, timeout=20,
+            [
+                _resolve(
+                    "COMPOSE_PKL_DIR",
+                    str(Path.home() / "workspace" / "compose-pkl"),
+                )
+                / "scripts"
+                / "container_cleanup.py"
+            ],
+            capture_output=True,
+            text=True,
+            timeout=20,
         )
     except Exception:
         pass
@@ -1692,6 +1746,192 @@ def _check_system_resources(
     return True, reason
 
 
+# ── Pre-flight validation gate (Plan 136, Appendix) ──────────────────────
+# Daemon-owned containers that are always running, subtracted from max.
+PROTECTED_CONTAINERS: set = {
+    "apple-honcho-honcho-db",
+    "apple-honcho-honcho-hub",
+    "apple-honcho-otel-pg-bridge",
+    "apple-honcho-hermes",
+    "apple-honcho-code-graph",
+}
+
+
+def _pre_flight_check(
+    eval_daemon_port: str | None = None,
+    max_containers: int = 8,
+) -> dict:
+    """Four-dimension pre-flight gate between resource backoff and OTel eval.
+
+    Checks system state before starting an expensive GEPA cycle. Returns a
+    consolidated pass/fail with per-dimension status.
+
+    Dimensions:
+      1. Memory pressure — vm_stat free+inactive+speculative < 500 MB → FAIL
+      2. Container capacity — dynamic running count vs max - PROTECTED
+      3. Eval daemon health — if eval_daemon_port, curl /health
+      4. OTel pipeline — quick otel_spans count in last 5 min (WARN on zero)
+
+    Returns dict with keys:
+      pass (bool):       False blocks evaluation, prompt is skipped
+      warn (bool):       True = evaluation allowed but with warning
+      reason (str):      Human-readable failure reason
+      warn_reason (str): Human-readable warning
+      fallback (bool):   True = use subprocess (daemon unhealthy)
+      state (dict):      Per-dimension diagnostic snapshot
+    """
+    result = {
+        "pass": True,
+        "warn": False,
+        "reason": "",
+        "warn_reason": "",
+        "fallback": False,
+        "state": {},
+    }
+
+    # ── Dimension 1: Memory pressure (tightened) ───────────────────────
+    try:
+        import subprocess
+
+        r = subprocess.run(
+            ["vm_stat"], capture_output=True, text=True, timeout=5
+        )
+        free_pages = 0
+        inactive_pages = 0
+        speculative_pages = 0
+        for line in r.stdout.split("\n"):
+            ls = line.strip().rstrip(".")
+            if ls.startswith("Pages free:"):
+                free_pages = int(ls.split(":")[1].strip())
+            elif ls.startswith("Pages inactive:"):
+                inactive_pages = int(ls.split(":")[1].strip())
+            elif ls.startswith("Pages speculative:"):
+                speculative_pages = int(ls.split(":")[1].strip())
+        total_pages = free_pages + inactive_pages + speculative_pages
+        available_mb = total_pages * 16384 / (1024 * 1024)
+        result["state"]["memory_free_mb"] = round(available_mb, 1)
+
+        if available_mb < 500:
+            result["pass"] = False
+            result["reason"] = (
+                f"memory pressure CRITICAL: {available_mb:.0f}MB available "
+                f"(threshold: 500MB)"
+            )
+            return result
+    except Exception as exc:
+        result["state"]["memory_free_mb"] = None
+        result["warn"] = True
+        result["warn_reason"] = (
+            result["warn_reason"] + f"memory check unavailable ({exc}); "
+            if result["warn_reason"]
+            else f"memory check unavailable ({exc}); "
+        )
+
+    # ── Dimension 2: Container capacity (dynamic, not static) ──────────
+    try:
+        import subprocess
+
+        r = subprocess.run(
+            ["container", "list", "--all"],
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+        running = sum(
+            1
+            for line in r.stdout.split("\n")
+            if line.strip()
+            and not line.startswith("CONTAINER")
+            and line.strip()
+        )
+        effective_max = max_containers - len(PROTECTED_CONTAINERS)
+        result["state"]["containers_running"] = running
+        result["state"]["containers_max"] = effective_max
+
+        if running >= effective_max:
+            result["pass"] = False
+            result["reason"] = (
+                f"container slots full ({running}/{effective_max}) "
+                f"(total running: {running}, protected: {len(PROTECTED_CONTAINERS)}, "
+                f"slot limit: {effective_max})"
+            )
+            return result
+    except Exception as exc:
+        result["state"]["containers_running"] = None
+        result["state"]["containers_max"] = None
+        result["warn"] = True
+        result["warn_reason"] = (
+            result["warn_reason"]
+            + f"container capacity check unavailable ({exc}); "
+        )
+
+    # ── Dimension 3: Eval daemon health ────────────────────────────────
+    if eval_daemon_port:
+        result["state"]["daemon_healthy"] = False
+        try:
+            import json
+            import urllib.request
+
+            req = urllib.request.Request(
+                f"http://127.0.0.1:{eval_daemon_port}/health",
+            )
+            with urllib.request.urlopen(req, timeout=5) as resp:
+                health = json.loads(resp.read().decode())
+
+            if health.get("status") == "ok":
+                result["state"]["daemon_healthy"] = True
+            else:
+                # Daemon exists but is unhealthy — allow with fallback
+                result["warn"] = True
+                result["warn_reason"] = (
+                    result["warn_reason"]
+                    + f"eval daemon unhealthy (status={health.get('status')}), "
+                    f"falling back to subprocess; "
+                )
+                result["fallback"] = True
+        except Exception as exc:
+            result["warn"] = True
+            result["warn_reason"] = (
+                result["warn_reason"] + f"eval daemon unreachable ({exc}), "
+                f"falling back to subprocess; "
+            )
+            result["fallback"] = True
+
+    # ── Dimension 4: OTel pipeline health ──────────────────────────────
+    # Lightweight query: spans flowing in last 5 minutes?
+    try:
+        conn = _pg_connect()
+        try:
+            cur = conn.cursor()
+            cur.execute(
+                "SELECT COUNT(*) FROM otel_spans "
+                "WHERE created_at > NOW() - INTERVAL '5 minutes'"
+            )
+            count = cur.fetchone()[0]
+            result["state"]["otel_spans_last_5min"] = count
+            if count == 0:
+                result["warn"] = True
+                result["warn_reason"] = (
+                    result["warn_reason"]
+                    + "No OTel spans in last 5 minutes — pipeline may be stalled; "
+                )
+        finally:
+            conn.close()
+    except Exception as exc:
+        result["state"]["otel_spans_last_5min"] = None
+        result["warn"] = True
+        result["warn_reason"] = (
+            result["warn_reason"]
+            + f"OTel pipeline check unavailable ({exc}); "
+        )
+
+    # Trim trailing "; " from warn_reason if it was set
+    if result["warn_reason"]:
+        result["warn_reason"] = result["warn_reason"].rstrip("; ")
+
+    return result
+
+
 def _check_convergence_stall(
     results: list[dict], tier_num: int
 ) -> dict | None:
@@ -1768,7 +2008,8 @@ def _clip_similarity(original: str, evolved: str) -> float:
         import torch
 
         _CLIP_MODEL, _ = clip.load(
-            "ViT-B/32", device="cpu",
+            "ViT-B/32",
+            device="cpu",
             download_root="/Users/kieranlal/.cache/clip",
         )
 
@@ -1783,7 +2024,9 @@ def _clip_similarity(original: str, evolved: str) -> float:
     truncated_evolved = evolved
     for attempt in range(2):
         try:
-            texts = _clip_module.tokenize([truncated_original, truncated_evolved])
+            texts = _clip_module.tokenize(
+                [truncated_original, truncated_evolved]
+            )
             break
         except RuntimeError as e:
             if "too long for context length" in str(e):
@@ -1802,15 +2045,19 @@ def _clip_similarity(original: str, evolved: str) -> float:
 
 def _generate_run_id() -> str:
     """Generate a short unique run identifier for resource prefixing (Victoria Protocol).
-    Format: t{T}{short_hash}, e.g. t1_a3f7 for tier 1 with a random 4-char suffix."""
+    Format: t{T}{short_hash}, e.g. t1_a3f7 for tier 1 with a random 4-char suffix.
+    """
     import hashlib
     import random
+
     tier = getattr(_current_args, "tier", 0)
     suffix = hashlib.md5(str(random.random()).encode()).hexdigest()[:4]
     return f"t{tier}_{suffix}"
 
 
 _CLIP_MODEL = None
+
+
 def _check_mutation_filter(
     prompt_text: str,
     evolved_text: str,
@@ -1829,11 +2076,13 @@ def _check_mutation_filter(
     import urllib.request
     import urllib.error
 
-    body = json.dumps({
-        "parent": prompt_text,
-        "mutation": evolved_text,
-        "threshold": _LOCAL_FILTER_THRESHOLD,
-    }).encode()
+    body = json.dumps(
+        {
+            "parent": prompt_text,
+            "mutation": evolved_text,
+            "threshold": _LOCAL_FILTER_THRESHOLD,
+        }
+    ).encode()
 
     try:
         req = urllib.request.Request(
@@ -1854,7 +2103,12 @@ def _check_mutation_filter(
             return False, prob
         return True, prob
 
-    except (urllib.error.URLError, urllib.error.HTTPError, OSError, json.JSONDecodeError) as e:
+    except (
+        urllib.error.URLError,
+        urllib.error.HTTPError,
+        OSError,
+        json.JSONDecodeError,
+    ) as e:
         _FILTER_FAILURE_COUNT += 1
         count = _FILTER_FAILURE_COUNT
         if count == 1 or count % 5 == 0:
@@ -1889,9 +2143,13 @@ def evolve_tier(tier_num: int, inventory: list) -> dict:
     print(f"Evolving {cfg['label']} ({lo}-{hi})")
     print(f"  Iterations: {cfg['iterations']}")
     print(f"  Parallelism: {parallel} worker(s)")
-    print(f"  Database: PostgreSQL ({DB_HOST}:{DB_PORT}/{DB_NAME}, prompts table, tier={tier_num})")
+    print(
+        f"  Database: PostgreSQL ({DB_HOST}:{DB_PORT}/{DB_NAME}, prompts table, tier={tier_num})"
+    )
     if getattr(_current_args, "local_filter", False):
-        print(f"  Pre-filter: ON (Qwen2.5 daemon at {_MODEL_SERVICE_URL}, threshold={_LOCAL_FILTER_THRESHOLD})")
+        print(
+            f"  Pre-filter: ON (Qwen2.5 daemon at {_MODEL_SERVICE_URL}, threshold={_LOCAL_FILTER_THRESHOLD})"
+        )
     if getattr(_current_args, "clip_regularizer", False):
         print(f"  CLIP regularizer: ON (ViT-B/32 at 0.2 weight)")
     if getattr(_current_args, "hyper", False):
@@ -1935,7 +2193,7 @@ def evolve_tier(tier_num: int, inventory: list) -> dict:
     resume = getattr(_current_args, "resume", False)
     resume_db = getattr(_current_args, "resume_from_db", None)
     completed_set = set()
-    
+
     if resume:
         cp = load_checkpoint(cfg["label"])
         if cp:
@@ -1943,9 +2201,13 @@ def evolve_tier(tier_num: int, inventory: list) -> dict:
     elif resume_db:
         try:
             import pg8000 as _pg8
+
             _db_conn = _pg8.connect(
-                host=DB_HOST, port=DB_PORT, user=DB_USER,
-                password=DB_PASSWORD, database=DB_NAME,
+                host=DB_HOST,
+                port=DB_PORT,
+                user=DB_USER,
+                password=DB_PASSWORD,
+                database=DB_NAME,
             )
             _db_cur = _db_conn.cursor()
             # Highest honcho DB inherits evo state across restarts
@@ -1961,7 +2223,7 @@ def evolve_tier(tier_num: int, inventory: list) -> dict:
                 print(f"  DB resume: {len(done_prompts)} prompts already done")
         except Exception as e:
             print(f"  ⚠ DB resume failed (falling back to full run): {e}")
-    
+
     for row in db_rows:
         prompt_num = row["prompt_num"]
         if resume and prompt_num in completed_set:
@@ -2055,11 +2317,13 @@ def evolve_tier(tier_num: int, inventory: list) -> dict:
         """
         prompt_num = task["prompt_num"]
         prompt_text = task["prompt_text"]
-        
+
         # Inject resource prefix for determinisitic cleanup (Victoria Protocol)
         # All containers/volumes/networks created by this prompt will use
         # this prefix, enabling surgical removal after the tier completes.
-        _RUN_PREFIX = getattr(_current_args, "run_id", None) or _generate_run_id()
+        _RUN_PREFIX = (
+            getattr(_current_args, "run_id", None) or _generate_run_id()
+        )
         prompt_text = (
             f"[RESOURCE_PREFIX: {_RUN_PREFIX}_{prompt_num}] "
             f"Prefix all container, volume, and network names with "
@@ -2068,7 +2332,7 @@ def evolve_tier(tier_num: int, inventory: list) -> dict:
             f"only use it in actual resource name parameters.\n\n"
             f"{prompt_text}"
         )
-        
+
         tools = task["tools"]
 
         # Resource-aware backoff: check before each Hermes session start
@@ -2086,6 +2350,35 @@ def evolve_tier(tier_num: int, inventory: list) -> dict:
 
             time.sleep(5 * (attempt + 1))  # 5s, 10s, 15s, ...
 
+        # ── Pre-flight gate: validate system state before OTel eval ──────
+        preflight = _pre_flight_check(
+            eval_daemon_port=os.environ.get("EVAL_DAEMON_PORT"),
+            max_containers=getattr(_current_args, "max_containers", 8),
+        )
+        if not preflight["pass"]:
+            print(
+                f"  ⛔ #{prompt_num} pre-flight FAILED: {preflight['reason']}"
+            )
+            print(f"  State: {preflight['state']}")
+            # Return a skip result — delta is 0, counts as non-evolved
+            return {
+                "prompt_num": prompt_num,
+                "evolved_text": prompt_text,
+                "orig_score": 0.0,
+                "evolved_score": 0.0,
+                "delta": 0.0,
+                "skipped": True,
+                "skip_reason": preflight["reason"],
+            }
+        if preflight.get("warn"):
+            print(
+                f"  ⚠ #{prompt_num} pre-flight warning: {preflight['warn_reason']}"
+            )
+
+        # ── Set daemon fallback if eval daemon is unhealthy ──────────────
+        if preflight.get("fallback"):
+            setattr(_current_args, "_daemon_fallback", True)
+
         orig_score = evaluate_prompt_wrapper(prompt_text)
         evolved_text, _, evolved_score = optimize_prompt_text(
             prompt_text,
@@ -2098,7 +2391,9 @@ def evolve_tier(tier_num: int, inventory: list) -> dict:
         filter_rejected = False
         if getattr(_current_args, "local_filter", False):
             proceed, prob = _check_mutation_filter(
-                prompt_text, evolved_text, prompt_num,
+                prompt_text,
+                evolved_text,
+                prompt_num,
             )
             if not proceed:
                 print(
@@ -2151,17 +2446,21 @@ def evolve_tier(tier_num: int, inventory: list) -> dict:
                         "evolve_session_id": evolve_session_id,
                         "parent_prompt": prompt_text,
                         "source_commit": src_commit,
-                        "clip_sim": round(clip_sim, 4) if clip_sim is not None else None,
+                        "clip_sim": round(clip_sim, 4)
+                        if clip_sim is not None
+                        else None,
                     }
                 )
                 # Also log filter status if applicable
                 if filter_rejected:
-                    log_evidence({
-                        "event": "filter_rejected",
-                        "prompt_num": prompt_num,
-                        "tier": tier_num,
-                        "delta": round(delta, 4),
-                    })
+                    log_evidence(
+                        {
+                            "event": "filter_rejected",
+                            "prompt_num": prompt_num,
+                            "tier": tier_num,
+                            "delta": round(delta, 4),
+                        }
+                    )
 
             print(
                 f"  #{prompt_num} Δ={delta:+.4f} ({orig_score:.3f} → {evolved_score:.3f})"
@@ -2177,9 +2476,13 @@ def evolve_tier(tier_num: int, inventory: list) -> dict:
 
         return {
             "prompt_num": prompt_num,
-            "evolved_text": evolved_text if not filter_rejected else prompt_text,
+            "evolved_text": evolved_text
+            if not filter_rejected
+            else prompt_text,
             "orig_score": orig_score,
-            "evolved_score": evolved_score if not filter_rejected else orig_score,
+            "evolved_score": evolved_score
+            if not filter_rejected
+            else orig_score,
             "delta": delta if not filter_rejected else 0.0,
         }
 
@@ -2296,7 +2599,8 @@ def evolve_tier(tier_num: int, inventory: list) -> dict:
 
             # Find stalled prompts (zero-delta prompts that need escape)
             stalled_prompts = [
-                r for r in results
+                r
+                for r in results
                 if abs(r.get("delta", 0)) < CONVERGENCE_EPSILON
             ]
 
@@ -2308,24 +2612,29 @@ def evolve_tier(tier_num: int, inventory: list) -> dict:
 
             for r in stalled_prompts:
                 pnum = r["prompt_num"]
-                original = r.get("evolved_text", "") or r.get("prompt_text", "")
+                original = r.get("evolved_text", "") or r.get(
+                    "prompt_text", ""
+                )
                 if not original:
                     continue
 
                 # Call apfel for radical mutation
-                body = _json.dumps({
-                    "model": "apfel",
-                    "messages": [
-                        {"role": "system", "content": HYPER_PROMPT},
-                        {"role": "user", "content": original},
-                    ],
-                    "temperature": 0.9,
-                    "max_tokens": 1024,
-                }).encode()
+                body = _json.dumps(
+                    {
+                        "model": "apfel",
+                        "messages": [
+                            {"role": "system", "content": HYPER_PROMPT},
+                            {"role": "user", "content": original},
+                        ],
+                        "temperature": 0.9,
+                        "max_tokens": 1024,
+                    }
+                ).encode()
 
                 try:
                     req = _ur.Request(
-                        APFEL_URL, data=body,
+                        APFEL_URL,
+                        data=body,
                         headers={"Content-Type": "application/json"},
                         method="POST",
                     )
@@ -2351,15 +2660,17 @@ def evolve_tier(tier_num: int, inventory: list) -> dict:
                             f"Δ={hyper_delta:+.4f} "
                             f"({r['orig_score']:.3f} → {hyper_score:.3f})"
                         )
-                        log_evidence({
-                            "event": "hyper_mutation",
-                            "prompt_num": pnum,
-                            "tier": tier_num,
-                            "original_score": round(r["orig_score"], 4),
-                            "hyper_score": round(hyper_score, 4),
-                            "delta": round(hyper_delta, 4),
-                            "succeeded": True,
-                        })
+                        log_evidence(
+                            {
+                                "event": "hyper_mutation",
+                                "prompt_num": pnum,
+                                "tier": tier_num,
+                                "original_score": round(r["orig_score"], 4),
+                                "hyper_score": round(hyper_score, 4),
+                                "delta": round(hyper_delta, 4),
+                                "succeeded": True,
+                            }
+                        )
                         # Update result in-memory for final summary
                         r["delta"] = hyper_delta
                         r["evolved_score"] = hyper_score
@@ -2369,15 +2680,22 @@ def evolve_tier(tier_num: int, inventory: list) -> dict:
                             f"    ✗ #{pnum} hyper-mutation failed: "
                             f"Δ={hyper_delta:+.4f}"
                         )
-                        log_evidence({
-                            "event": "hyper_mutation",
-                            "prompt_num": pnum,
-                            "tier": tier_num,
-                            "delta": round(hyper_delta, 4),
-                            "succeeded": False,
-                        })
+                        log_evidence(
+                            {
+                                "event": "hyper_mutation",
+                                "prompt_num": pnum,
+                                "tier": tier_num,
+                                "delta": round(hyper_delta, 4),
+                                "succeeded": False,
+                            }
+                        )
 
-                except (_ue.URLError, _ue.HTTPError, OSError, _json.JSONDecodeError) as e:
+                except (
+                    _ue.URLError,
+                    _ue.HTTPError,
+                    OSError,
+                    _json.JSONDecodeError,
+                ) as e:
                     print(f"    ⚠️  apfel error for #{pnum}: {e} — skipping")
                     continue
 
@@ -2390,12 +2708,14 @@ def evolve_tier(tier_num: int, inventory: list) -> dict:
                     "attempted": hyper_attempted,
                     "succeeded": hyper_succeeded,
                 }
-                log_evidence({
-                    "event": "hyper_mutation_summary",
-                    "tier": tier_num,
-                    "attempted": hyper_attempted,
-                    "succeeded": hyper_succeeded,
-                })
+                log_evidence(
+                    {
+                        "event": "hyper_mutation_summary",
+                        "tier": tier_num,
+                        "attempted": hyper_attempted,
+                        "succeeded": hyper_succeeded,
+                    }
+                )
 
     # Print summary
     improved = sum(1 for r in results if r["delta"] > 0)
@@ -2412,13 +2732,21 @@ def evolve_tier(tier_num: int, inventory: list) -> dict:
     # ── Victoria Protocol: cleanup containers created during this run ──
     if getattr(_current_args, "cleanup_after", False):
         _run_id = getattr(_current_args, "run_id", None) or _generate_run_id()
-        print(f"  Cleanup: removing containers matching prefix '{_run_id}_'...")
+        print(
+            f"  Cleanup: removing containers matching prefix '{_run_id}_'..."
+        )
         try:
             import subprocess as _sp
+
             _sp.run(
-                [str(COMPOSE_PKL / "scripts" / "container_cleanup.py"),
-                 "--by-pattern", f"{_run_id}_"],
-                capture_output=True, text=True, timeout=30,
+                [
+                    str(COMPOSE_PKL / "scripts" / "container_cleanup.py"),
+                    "--by-pattern",
+                    f"{_run_id}_",
+                ],
+                capture_output=True,
+                text=True,
+                timeout=30,
             )
             print(f"  Cleanup complete")
         except Exception as e:
@@ -2819,7 +3147,8 @@ def main():
     )
     parser.add_argument(
         "--run-id",
-        type=str, default=None,
+        type=str,
+        default=None,
         help="Resource prefix for Victoria Protocol cleanup. Auto-generated if omitted. "
         "All containers created during this run will use this prefix.",
     )
@@ -2834,6 +3163,13 @@ def main():
         action="store_true",
         help="Resume from database evolution_state table. Skips prompts where "
         "status = 'done' for the current tier's run_id. Survives reboots.",
+    )
+    parser.add_argument(
+        "--eval-daemon",
+        action="store_true",
+        help="Route evaluation through persistent eval_daemon.py (:11436). "
+        "Checks daemon health first; falls back to rubric evaluator on failure. "
+        "Eliminates VZ VM boot overhead (~30-60s cold vs ~3s hot per eval).",
     )
 
     args = parser.parse_args()
