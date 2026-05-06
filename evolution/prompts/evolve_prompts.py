@@ -1795,11 +1795,22 @@ def _clip_similarity(original: str, evolved: str) -> float:
                 raise
     with torch.no_grad():
         features = _CLIP_MODEL.encode_text(texts)
-        features = features / features.norm(dim=-1, keepdim=True)
+    features = features / features.norm(dim=-1, keepdim=True)
     sim = (features[0] @ features[1].T).item()
     return max(0.0, min(1.0, sim))
 
 
+def _generate_run_id() -> str:
+    """Generate a short unique run identifier for resource prefixing (Victoria Protocol).
+    Format: t{T}{short_hash}, e.g. t1_a3f7 for tier 1 with a random 4-char suffix."""
+    import hashlib
+    import random
+    tier = getattr(_current_args, "tier", 0)
+    suffix = hashlib.md5(str(random.random()).encode()).hexdigest()[:4]
+    return f"t{tier}_{suffix}"
+
+
+_CLIP_MODEL = None
 def _check_mutation_filter(
     prompt_text: str,
     evolved_text: str,
@@ -2021,6 +2032,20 @@ def evolve_tier(tier_num: int, inventory: list) -> dict:
         """
         prompt_num = task["prompt_num"]
         prompt_text = task["prompt_text"]
+        
+        # Inject resource prefix for determinisitic cleanup (Victoria Protocol)
+        # All containers/volumes/networks created by this prompt will use
+        # this prefix, enabling surgical removal after the tier completes.
+        _RUN_PREFIX = getattr(_current_args, "run_id", None) or _generate_run_id()
+        prompt_text = (
+            f"[RESOURCE_PREFIX: {_RUN_PREFIX}_{prompt_num}] "
+            f"Prefix all container, volume, and network names with "
+            f'"{_RUN_PREFIX}_{prompt_num}_" throughout this request. '
+            f"Do NOT include the prefix in any descriptions or explanations — "
+            f"only use it in actual resource name parameters.\n\n"
+            f"{prompt_text}"
+        )
+        
         tools = task["tools"]
 
         # Resource-aware backoff: check before each Hermes session start
@@ -2360,6 +2385,21 @@ def evolve_tier(tier_num: int, inventory: list) -> dict:
     )
     print(f"  Session: {evolve_session_id}")
     print(f"{'=' * 60}")
+
+    # ── Victoria Protocol: cleanup containers created during this run ──
+    if getattr(_current_args, "cleanup_after", False):
+        _run_id = getattr(_current_args, "run_id", None) or _generate_run_id()
+        print(f"  Cleanup: removing containers matching prefix '{_run_id}_'...")
+        try:
+            import subprocess as _sp
+            _sp.run(
+                [str(COMPOSE_PKL / "scripts" / "container_cleanup.py"),
+                 "--by-pattern", f"{_run_id}_"],
+                capture_output=True, text=True, timeout=30,
+            )
+            print(f"  Cleanup complete")
+        except Exception as e:
+            print(f"  Cleanup error: {e}")
 
     return evidence
 
@@ -2753,6 +2793,18 @@ def main():
         "(>80%% zero-delta), forces radical mutations via apfel on stalled prompts "
         "to escape local optima. Calls apfel at http://127.0.0.1:11434/v1 with a "
         "rewrite-completely prompt. Logs hyper_mutation events in evidence.",
+    )
+    parser.add_argument(
+        "--run-id",
+        type=str, default=None,
+        help="Resource prefix for Victoria Protocol cleanup. Auto-generated if omitted. "
+        "All containers created during this run will use this prefix.",
+    )
+    parser.add_argument(
+        "--cleanup-after",
+        action="store_true",
+        help="After tier completes, remove containers matching the run_id prefix. "
+        "Runs regardless of tier success or failure.",
     )
 
     args = parser.parse_args()
