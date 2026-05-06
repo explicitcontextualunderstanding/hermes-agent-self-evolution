@@ -1933,12 +1933,35 @@ def evolve_tier(tier_num: int, inventory: list) -> dict:
     # Build prompt tasks from DB rows
     prompt_tasks = []
     resume = getattr(_current_args, "resume", False)
+    resume_db = getattr(_current_args, "resume_from_db", None)
+    completed_set = set()
+    
     if resume:
         cp = load_checkpoint(cfg["label"])
-        completed_set = set(cp.get("completed_prompts", [])) if cp else set()
-    else:
-        completed_set = set()
-
+        if cp:
+            completed_set = set(cp.get("completed_prompts", []))
+    elif resume_db:
+        try:
+            import pg8000 as _pg8
+            _db_conn = _pg8.connect(
+                host=DB_HOST, port=DB_PORT, user=DB_USER,
+                password=DB_PASSWORD, database=DB_NAME,
+            )
+            _db_cur = _db_conn.cursor()
+            # Highest honcho DB inherits evo state across restarts
+            _db_cur.execute(
+                "SELECT prompt_num FROM evolution_state "
+                "WHERE run_id LIKE $1 AND status = 'done'",
+                (f"t{tier_num}_%",),
+            )
+            done_prompts = [r[0] for r in _db_cur.fetchall()]
+            _db_conn.close()
+            completed_set = set(done_prompts)
+            if done_prompts:
+                print(f"  DB resume: {len(done_prompts)} prompts already done")
+        except Exception as e:
+            print(f"  ⚠ DB resume failed (falling back to full run): {e}")
+    
     for row in db_rows:
         prompt_num = row["prompt_num"]
         if resume and prompt_num in completed_set:
@@ -2805,6 +2828,12 @@ def main():
         action="store_true",
         help="After tier completes, remove containers matching the run_id prefix. "
         "Runs regardless of tier success or failure.",
+    )
+    parser.add_argument(
+        "--resume-from-db",
+        action="store_true",
+        help="Resume from database evolution_state table. Skips prompts where "
+        "status = 'done' for the current tier's run_id. Survives reboots.",
     )
 
     args = parser.parse_args()
