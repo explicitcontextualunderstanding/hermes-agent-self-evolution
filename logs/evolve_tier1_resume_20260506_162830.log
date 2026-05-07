@@ -1,0 +1,58 @@
+  ✓ OTel pipeline verified (519 spans available)
+
+============================================================
+Evolving Tier 1: Container Lifecycle (1-47)
+  Iterations: 5
+  Parallelism: 3 worker(s)
+  Database: PostgreSQL (192.168.64.10:5432/harness_evolution, prompts table, tier=1)
+  Pre-filter: ON (Qwen2.5 daemon at http://127.0.0.1:11435, threshold=0.7956)
+  CLIP regularizer: ON (ViT-B/32 at 0.2 weight)
+  Hyper-Mutation: ON (apfel radical escape on stall)
+============================================================
+  🔥 Latency band RED (σ=743.0ms) — thermal throttling detected, forcing --parallel 1
+  ⏳ #1 waiting for resources: memory pressure 0.862 > 0.85 — suspending next worker (free=0.1GB, inactive=1.1GB, total=8.0GB)
+  ⚠ #1 pre-flight warning: OTel pipeline check unavailable ({'S': 'ERROR', 'V': 'ERROR', 'C': '42703', 'M': 'column "created_at" does not exist', 'P': '39', 'F': 'parse_relation.c', 'L': '3665', 'R': 'errorMissingColumn'})
+GEPA Optimization:   0%|          | 0/10 [00:00<?, ?rollouts/s]Iteration 0: Base program full valset score: 0.58 over 2 / 2 examples
+Iteration 1: Selected program 0 score: 0.58
+Iteration 1: Proposed new text for prompt: Looking at the evaluations, the two critical failure points are:
+- coverage (0.2): Only tests the happy path, no edge cases or
+parameter guidance
+- verifiability (0.1): No way to confirm success after the create call
+The improvements target those specifically while keeping it tight.
+[RESOURCE_PREFIX: t1_126d_1] Prefix all resource names with
+"t1_126d_1_" — only in parameters, never in descriptions.
+Test: create_container with image="nginx:latest", id="web-nginx",
+ports=["8080:80/tcp"]. Before creation, inspect for a container with
+that ID — if it exists, report the conflict, abort, and require manual
+resolution. If the container is absent, proceed with creation (5s
+connection timeout, 30s operation timeout). On success, inspect the
+created container: confirm image=="nginx:latest" and port_mappings
+exist with host_port=8080 mapped to container_port=80. On creation
+failure, report the exact tool error and abort.
+──────────────────────────────────────────────────────────────────────────────
+⚠ Iteration budget reached (1/1) — response may be incomplete
+hermes --resume 20260506_162900_b17167
+Iteration 1: New subsample score 2.175 is better than old score 1.7399999999999998. Continue to full eval and add to candidate pool.
+Iteration 1: Found a better program on the valset with score 0.725.
+Iteration 1: Valset score for new program: 0.725 (coverage 2 / 2)
+Iteration 1: Val aggregate for new program: 0.725
+Iteration 1: Individual valset scores for new program: {0: 0.725, 1: 0.725}
+Iteration 1: Objective aggregate scores for new program: {'rubric': 0.725}
+Iteration 1: New valset pareto front scores: {0: 0.725, 1: 0.725}
+Iteration 1: Objective pareto front scores: {'rubric': 0.725}
+Iteration 1: Valset pareto front aggregate score: 0.725
+Iteration 1: Updated valset pareto front programs: {0: {1}, 1: {1}}
+Iteration 1: Updated objective pareto front programs: {'rubric': {1}}
+Iteration 1: Best valset aggregate score so far: 0.725
+Iteration 1: Best program as per aggregate score on valset: 1
+Iteration 1: Best score on valset: 0.725
+Iteration 1: Linear pareto front program index: 1
+Iteration 1: New program candidate index: 1
+GEPA Optimization:  20%|██        | 2/10 [00:34<02:17, 17.25s/rollouts]
+  Model service call failed: timed out (proceeding without filter)
+  Local filter PASSED mutation (P=1.0000) — proceeding to OTel
+Python(9593) MallocStackLogging: can't turn off malloc stack logging because it was not enabled.
+Python(10308) MallocStackLogging: can't turn off malloc stack logging because it was not enabled.
+Python(10314) MallocStackLogging: can't turn off malloc stack logging because it was not enabled.
+  OTel rejected: 0.000 vs 0.000 (keeping original)
+  ⚠️  FILTER SERVICE DOWN (#1 consecutive failure(s)) for #1: timed out — defaulting to PROCEED (fail-open). Restart: python3 scripts/model_service.py

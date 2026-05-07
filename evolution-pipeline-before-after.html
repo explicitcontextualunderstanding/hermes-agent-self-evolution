@@ -168,6 +168,7 @@
   <!-- ===================== SECTION DIVIDER ===================== -->
   <text class="th" x="40" y="30">Before: O(n³) token explosion</text>
   <text class="ts" x="40" y="48">Every GEPA iteration calls the LLM inside the n² evaluation loop</text>
+  <text class="ts" x="40" y="62">Prompts read from markdown files (docs/*.md)</text>
 
   <!-- GEPA iteration 1 container -->
   <g class="c-pink">
@@ -233,6 +234,7 @@
   <line x1="40" y1="530" x2="720" y2="530" class="leader"/>
   <text class="th" x="40" y="560">After: 5 mitigations applied</text>
   <text class="ts" x="40" y="578">Same GEPA pipeline — each explosion point now blocked</text>
+  <text class="ts" x="40" y="594">DB-backed reading: prompts sourced from SQLite (prompt_evolution.db)</text>
 
   <!-- Mitigation 1: --eval-examples -->
   <g class="c-teal">

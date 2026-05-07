@@ -1,0 +1,69 @@
+  ✓ OTel pipeline verified (433 spans available)
+
+============================================================
+Evolving Tier 1: Container Lifecycle (1-47)
+  Iterations: 5
+  Parallelism: 3 worker(s)
+  Database: PostgreSQL (192.168.64.23:5432/harness_evolution, prompts table, tier=1)
+  Pre-filter: ON (Qwen2.5 daemon at http://127.0.0.1:11435, threshold=0.7956)
+  CLIP regularizer: ON (ViT-B/32 at 0.2 weight)
+  Hyper-Mutation: ON (apfel radical escape on stall)
+============================================================
+  🔥 Latency band RED (σ=444.2ms) — thermal throttling detected, forcing --parallel 1
+Traceback (most recent call last):
+  File "/Users/kieranlal/workspace/hermes-agent-self-evolution/.venv/lib/python3.14/site-packages/pg8000/core.py", line 204, in _make_socket
+    sock = socket.create_connection((host, port), timeout, source_address)
+  File "/opt/homebrew/Cellar/python@3.14/3.14.4/Frameworks/Python.framework/Versions/3.14/lib/python3.14/socket.py", line 870, in create_connection
+    raise exceptions[0]
+  File "/opt/homebrew/Cellar/python@3.14/3.14.4/Frameworks/Python.framework/Versions/3.14/lib/python3.14/socket.py", line 855, in create_connection
+    sock.connect(sa)
+    ~~~~~~~~~~~~^^^^
+TimeoutError: [Errno 60] Operation timed out
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "<frozen runpy>", line 198, in _run_module_as_main
+  File "<frozen runpy>", line 88, in _run_code
+  File "/Users/kieranlal/workspace/hermes-agent-self-evolution/evolution/prompts/evolve_prompts.py", line 3300, in <module>
+    # Auto-continuation: if all gates pass, proceed to full batch
+  File "/Users/kieranlal/workspace/hermes-agent-self-evolution/evolution/prompts/evolve_prompts.py", line 3280, in main
+    )
+    
+  File "/Users/kieranlal/workspace/hermes-agent-self-evolution/evolution/prompts/evolve_prompts.py", line 1947, in evolve_tier
+    Each worker runs its own Hermes Agent session. Container names are parameterized
+           ^^^^^^^^^^^^^
+  File "/Users/kieranlal/workspace/hermes-agent-self-evolution/evolution/prompts/evolve_prompts.py", line 776, in _pg_connect
+    return pg8000.connect(
+           ~~~~~~~~~~~~~~^
+        host=DB_HOST,
+        ^^^^^^^^^^^^^
+    ...<3 lines>...
+        database=DB_NAME,
+        ^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/Users/kieranlal/workspace/hermes-agent-self-evolution/.venv/lib/python3.14/site-packages/pg8000/__init__.py", line 112, in connect
+    return Connection(
+        user,
+    ...<11 lines>...
+        startup_params=startup_params,
+    )
+  File "/Users/kieranlal/workspace/hermes-agent-self-evolution/.venv/lib/python3.14/site-packages/pg8000/legacy.py", line 445, in __init__
+    super().__init__(*args, **kwargs)
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^
+  File "/Users/kieranlal/workspace/hermes-agent-self-evolution/.venv/lib/python3.14/site-packages/pg8000/core.py", line 328, in __init__
+    self.channel_binding, self._usock = _make_socket(
+                                        ~~~~~~~~~~~~^
+        unix_sock,
+        ^^^^^^^^^^
+    ...<6 lines>...
+        ssl_context,
+        ^^^^^^^^^^^^
+    )
+    ^
+  File "/Users/kieranlal/workspace/hermes-agent-self-evolution/.venv/lib/python3.14/site-packages/pg8000/core.py", line 206, in _make_socket
+    raise InterfaceError(
+    ...<2 lines>...
+    ) from e
+pg8000.exceptions.InterfaceError: Can't create a connection to host 192.168.64.23 and port 5432 (timeout is None and source_address is None).

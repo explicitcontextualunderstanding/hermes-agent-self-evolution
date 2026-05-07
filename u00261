@@ -1,0 +1,1 @@
+[hermes-otel] ✗ No backend configured (set OTEL_PHOENIX_ENDPOINT, OTEL_SIGNOZ_ENDPOINT, OTEL_JAEGER_ENDPOINT, OTEL_TEMPO_ENDPOINT, Langfuse credentials, or LANGSMITH_TRACING; or define 'backends:' in config.yaml)

@@ -507,5 +507,156 @@ class TestOTelPromptAdapter(unittest.TestCase):
         self.assertTrue(callable(adapter.make_reflective_dataset))
 
 
+# ── 8. LATENCY DRIFT: _measure_latency_drift() ─────────────────────────
+
+
+class TestLatencyDrift(unittest.TestCase):
+    """Tests for _measure_latency_drift()."""
+
+    def _mock_cursor(self, rows: list[tuple]) -> mock.MagicMock:
+        """Create a mocked cursor with given fetchall results."""
+        cur = mock.MagicMock()
+        cur.fetchall.return_value = rows
+        return cur
+
+    def _mock_conn(self, rows: list[tuple]) -> mock.MagicMock:
+        """Create a mocked connection with cursor returning rows."""
+        conn = mock.MagicMock()
+        conn.cursor.return_value = self._mock_cursor(rows)
+        return conn
+
+    @mock.patch("evolution.prompts.otel_adapter._get_db_config")
+    @mock.patch("pg8000.connect")
+    def test_latency_drift_green(self, mock_connect, mock_db_config):
+        """std < 5ms should return GREEN."""
+        rows = [
+            ("container.start", 90.0),
+            ("container.start", 92.0),
+            ("container.start", 88.0),
+            ("container.start", 91.0),
+            ("container.start", 89.0),
+        ]
+        mock_connect.return_value = self._mock_conn(rows)
+        mock_db_config.return_value = {"host": "x", "port": 5432,
+                                        "user": "u", "database": "d"}
+
+        from evolution.prompts.otel_adapter import _measure_latency_drift
+        result = _measure_latency_drift()
+
+        self.assertEqual(result["latency_band"], "GREEN")
+        self.assertGreater(result["sample_count"], 1)
+        # std of [90, 92, 88, 91, 89] is ~1.41, well under 5
+
+    @mock.patch("evolution.prompts.otel_adapter._get_db_config")
+    @mock.patch("pg8000.connect")
+    def test_latency_drift_yellow(self, mock_connect, mock_db_config):
+        """std in 5-15ms range should return YELLOW."""
+        rows = [
+            ("container.start", 80.0),
+            ("container.start", 92.0),
+            ("container.start", 75.0),
+            ("container.start", 96.0),
+            ("container.start", 82.0),
+        ]
+        mock_connect.return_value = self._mock_conn(rows)
+        mock_db_config.return_value = {"host": "x", "port": 5432,
+                                        "user": "u", "database": "d"}
+
+        from evolution.prompts.otel_adapter import _measure_latency_drift
+        result = _measure_latency_drift()
+
+        self.assertEqual(result["latency_band"], "YELLOW")
+        # std of [80, 92, 75, 96, 82] ≈ 7.57, YELLOW range (5-15)
+
+    @mock.patch("evolution.prompts.otel_adapter._get_db_config")
+    @mock.patch("pg8000.connect")
+    def test_latency_drift_red(self, mock_connect, mock_db_config):
+        """std > 15ms should return RED."""
+        rows = [
+            ("container.start", 60.0),
+            ("container.start", 95.0),
+            ("container.start", 55.0),
+            ("container.start", 110.0),
+            ("container.start", 45.0),
+        ]
+        mock_connect.return_value = self._mock_conn(rows)
+        mock_db_config.return_value = {"host": "x", "port": 5432,
+                                        "user": "u", "database": "d"}
+
+        from evolution.prompts.otel_adapter import _measure_latency_drift
+        result = _measure_latency_drift()
+
+        self.assertEqual(result["latency_band"], "RED")
+        # std of [60, 95, 55, 110, 45] ≈ 24.5, well above 15
+
+    @mock.patch("evolution.prompts.otel_adapter._get_db_config")
+    @mock.patch("pg8000.connect")
+    def test_latency_drift_no_spans(self, mock_connect, mock_db_config):
+        """No spans should return GREEN with sample_count=0."""
+        mock_connect.return_value = self._mock_conn([])
+        mock_db_config.return_value = {"host": "x", "port": 5432,
+                                        "user": "u", "database": "d"}
+
+        from evolution.prompts.otel_adapter import _measure_latency_drift
+        result = _measure_latency_drift()
+
+        self.assertEqual(result["latency_band"], "GREEN")
+        self.assertEqual(result["sample_count"], 0)
+        self.assertEqual(result["mean_ms"], 0.0)
+        self.assertEqual(result["std_ms"], 0.0)
+
+    @mock.patch("evolution.prompts.otel_adapter._get_db_config")
+    @mock.patch("pg8000.connect")
+    def test_latency_drift_db_error(self, mock_connect, mock_db_config):
+        """DB connection failure should gracefully degrade to GREEN."""
+        mock_connect.side_effect = RuntimeError("DB unreachable")
+        mock_db_config.return_value = {"host": "x", "port": 5432,
+                                        "user": "u", "database": "d"}
+
+        from evolution.prompts.otel_adapter import _measure_latency_drift
+        result = _measure_latency_drift()
+
+        self.assertEqual(result["latency_band"], "GREEN")
+        self.assertEqual(result["sample_count"], 0)
+
+    @mock.patch("evolution.prompts.otel_adapter._get_db_config")
+    @mock.patch("pg8000.connect")
+    def test_latency_drift_single_span(self, mock_connect, mock_db_config):
+        """Single span should return GREEN with std=0."""
+        mock_connect.return_value = self._mock_conn([
+            ("container.create", 87.0),
+        ])
+        mock_db_config.return_value = {"host": "x", "port": 5432,
+                                        "user": "u", "database": "d"}
+
+        from evolution.prompts.otel_adapter import _measure_latency_drift
+        result = _measure_latency_drift()
+
+        self.assertEqual(result["latency_band"], "GREEN")
+        self.assertEqual(result["sample_count"], 1)
+        self.assertEqual(result["std_ms"], 0.0)
+        self.assertEqual(result["mean_ms"], 87.0)
+
+    @mock.patch("evolution.prompts.otel_adapter._get_db_config")
+    @mock.patch("pg8000.connect")
+    def test_latency_drift_only_creates(self, mock_connect, mock_db_config):
+        """Only container.create spans should work too."""
+        rows = [
+            ("container.create", 150.0),
+            ("container.create", 155.0),
+            ("container.create", 148.0),
+        ]
+        mock_connect.return_value = self._mock_conn(rows)
+        mock_db_config.return_value = {"host": "x", "port": 5432,
+                                        "user": "u", "database": "d"}
+
+        from evolution.prompts.otel_adapter import _measure_latency_drift
+        result = _measure_latency_drift()
+
+        self.assertEqual(result["latency_band"], "GREEN")
+        self.assertEqual(result["sample_count"], 3)
+        # std of [150, 155, 148] ≈ 2.62, GREEN
+
+
 if __name__ == "__main__":
     unittest.main()

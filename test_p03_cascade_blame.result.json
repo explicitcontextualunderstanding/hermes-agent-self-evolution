@@ -1,0 +1,68 @@
+{
+  "gate": "P0.3",
+  "all_pass": true,
+  "test_count": 6,
+  "pass_count": 6,
+  "tests": [
+    {
+      "name": "all_success",
+      "passed": true,
+      "blame": {
+        "0": 0.0,
+        "1": 0.0,
+        "2": 0.0
+      },
+      "composite": 1.0
+    },
+    {
+      "name": "first_step_fails_no_warnings",
+      "passed": true,
+      "blame": {
+        "0": 1.0,
+        "1": 0.0,
+        "2": 0.0
+      },
+      "composite": 0.0
+    },
+    {
+      "name": "second_step_fails_no_warnings",
+      "passed": true,
+      "blame": {
+        "0": 0.0,
+        "1": 1.0,
+        "2": 0.0
+      },
+      "composite": 0.3333
+    },
+    {
+      "name": "second_step_fails_after_warning",
+      "passed": true,
+      "blame": {
+        "0": 0.6,
+        "1": 0.4,
+        "2": 0.0
+      },
+      "composite": 0.3333
+    },
+    {
+      "name": "third_step_fails_multi_cascade",
+      "passed": true,
+      "blame": {
+        "0": 0.19999999999999998,
+        "1": 0.39999999999999997,
+        "2": 0.4
+      },
+      "composite": 0.6667
+    },
+    {
+      "name": "third_step_fails_one_warning",
+      "passed": true,
+      "blame": {
+        "0": 0.0,
+        "1": 0.6,
+        "2": 0.4
+      },
+      "composite": 0.6667
+    }
+  ]
+}
