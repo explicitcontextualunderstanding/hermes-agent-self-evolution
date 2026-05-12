@@ -7,6 +7,7 @@ Zero external dependencies — stdlib only (json, subprocess, pathlib, asyncio).
 
 import asyncio
 import json
+import os
 import random
 import re
 import subprocess
@@ -22,18 +23,21 @@ router = APIRouter()
 _control_lock = asyncio.Lock()
 
 # ── Constants ──────────────────────────────────────────────────────────
+import os
+from pathlib import Path
 
-from evolution.env_config import HERMES_HOME as _HH, HERMES_AGENT_REPO as _HAR
+# Hardcoded paths (dashboard process doesn't have evolution package on PYTHONPATH)
+_REAL_HOME = Path("/Users/kieranlal")
+HERMES_HOME = Path(os.environ.get("HERMES_HOME", str(_REAL_HOME / ".hermes")))
+HERMES_AGENT_REPO = Path(os.environ.get("HERMES_AGENT_REPO", str(_REAL_HOME / "workspace/nano2")))
 
-HERMES_HOME = _HH
-WRAPPERS_DIR = _HH / "skills" / ".wrappers"
+WRAPPERS_DIR = HERMES_HOME / "skills" / ".wrappers"
 HEALTH_FILE = WRAPPERS_DIR / "health.json"
 ROTATION_STATE_FILE = WRAPPERS_DIR / ".rotation_state.json"
 LOG_FILE = WRAPPERS_DIR / "batch_size_aware.log"
 LOG_FILE_PARALLEL = WRAPPERS_DIR / "batch_parallel.log"
-BATCH_SCRIPT = _HAR / "scripts" / "evolve_batch_size_aware.sh"
-ROTATION_SCRIPT = _HAR / "scripts" / "evolve_skill_rotation.py"
-HERMES_AGENT_REPO = _HAR
+BATCH_SCRIPT = HERMES_AGENT_REPO / "scripts" / "evolve_batch_size_aware.sh"
+ROTATION_SCRIPT = HERMES_AGENT_REPO / "scripts" / "evolve_skill_rotation.py"
 AUDIT_LOG = HERMES_AGENT_REPO / ".evolution_audit.log"
 SKILLS_DIR = HERMES_AGENT_REPO / ".claude" / "skills"
 
@@ -637,3 +641,12 @@ async def skill_revert(req: RevertRequest):
             "reverted_to": commit_sha,
             "message": f"Skill '{name}' reverted to {commit_sha[:12]}",
         }
+
+# ── Include infra-map graph routes ───────────────────────────────────
+import importlib.util, sys
+_infra_path = '/Users/kieranlal/workspace/compose-pkl/dashboard-plugin/infra-map/dashboard/plugin_api.py'
+_infra_spec = importlib.util.spec_from_file_location('_infra_map_api', _infra_path)
+_infra_mod = importlib.util.module_from_spec(_infra_spec)
+sys.modules['_infra_map_api'] = _infra_mod
+_infra_spec.loader.exec_module(_infra_mod)
+router.include_router(_infra_mod.router)
