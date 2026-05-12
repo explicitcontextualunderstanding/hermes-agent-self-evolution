@@ -671,23 +671,33 @@ async def live_topology(mock: bool = False):
         nodes, edges = [], []
         seen = set()
         for c in containers:
-            cfg = c.get("configuration", c)
+            if not isinstance(c, dict):
+                continue
+            cfg = c.get("configuration", {})
+            if not isinstance(cfg, dict):
+                continue
             status = c.get("status", {})
-            cid = cfg.get("name", status.get("id", "unknown"))
+            cid = cfg.get("name", status.get("id", "")) if isinstance(status, dict) else cfg.get("name", "")
             if not cid or cid in seen:
                 continue
             seen.add(cid)
-            image_ref = cfg.get("image", {}).get("reference", "")
-            res = cfg.get("resources", {})
+            image_ref = ""
+            img = cfg.get("image", {})
+            if isinstance(img, dict):
+                image_ref = img.get("reference", "")
+            res = cfg.get("resources", {}) if isinstance(cfg.get("resources"), dict) else {}
+            state = "unknown"
+            if isinstance(status, dict):
+                state = status.get("state", "unknown")
             nodes.append({
                 "id": cid, "label": cid,
                 "role": "FleetAgent",
-                "temporal_state": status.get("state", c.get("state", "unknown")),
+                "temporal_state": state,
                 "execution_mode": "container",
-                "cpu": res.get("cpus", c.get("cpus", c.get("cpu", 0)) or 0),
-                "mem": (res.get("memoryInBytes", c.get("memory", 0)) or 0) // 1048576,
+                "cpu": res.get("cpus", 0) or 0,
+                "mem": (res.get("memoryInBytes", 0) or 0) // 1048576,
                 "image": image_ref.split("/")[-1] if image_ref else "",
-                "address": c.get("addr", c.get("address", "")),
+                "address": "",
             })
 
         return {"nodes": nodes, "edges": edges}
