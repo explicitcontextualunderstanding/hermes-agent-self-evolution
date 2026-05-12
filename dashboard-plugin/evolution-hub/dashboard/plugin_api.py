@@ -661,7 +661,7 @@ async def live_topology(mock: bool = False):
     try:
         import subprocess, json, re
         proc = subprocess.run(
-            ["container", "ls", "--json"],
+            ["container", "list", "--format", "json"],
             capture_output=True, text=True, timeout=10
         )
         containers = json.loads(proc.stdout) if proc.stdout else []
@@ -671,18 +671,22 @@ async def live_topology(mock: bool = False):
         nodes, edges = [], []
         seen = set()
         for c in containers:
-            cid = c.get("id", c.get("name", "?"))
-            if cid in seen:
+            cfg = c.get("configuration", c)
+            status = c.get("status", {})
+            cid = cfg.get("name", status.get("id", "unknown"))
+            if not cid or cid in seen:
                 continue
             seen.add(cid)
+            image_ref = cfg.get("image", {}).get("reference", "")
+            res = cfg.get("resources", {})
             nodes.append({
                 "id": cid, "label": cid,
                 "role": "FleetAgent",
-                "temporal_state": c.get("state", c.get("status", "unknown")),
+                "temporal_state": status.get("state", c.get("state", "unknown")),
                 "execution_mode": "container",
-                "cpu": int(c.get("cpus", c.get("cpu", 0)) or 0),
-                "mem": int(c.get("memory", c.get("memory_mb", 0)) or 0),
-                "image": c.get("image", ""),
+                "cpu": res.get("cpus", c.get("cpus", c.get("cpu", 0)) or 0),
+                "mem": (res.get("memoryInBytes", c.get("memory", 0)) or 0) // 1048576,
+                "image": image_ref.split("/")[-1] if image_ref else "",
                 "address": c.get("addr", c.get("address", "")),
             })
 
