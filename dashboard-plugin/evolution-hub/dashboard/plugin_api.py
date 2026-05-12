@@ -642,6 +642,56 @@ async def skill_revert(req: RevertRequest):
             "message": f"Skill '{name}' reverted to {commit_sha[:12]}",
         }
 
+@router.get("/live")
+async def live_topology(mock: bool = False):
+    """Return live container topology from the Apple VZ runtime.
+
+    Uses the ``container ls`` CLI for reliable VZ state (MCP backend
+    only sees containers it created, not the full system).
+    """
+    if mock:
+        return {
+            "nodes": [
+                {"id": "web", "label": "web", "role": "FleetAgent", "temporal_state": "Running", "execution_mode": "container", "cpu": 4, "mem": 1024, "image": "nginx:alpine"},
+                {"id": "api", "label": "api", "role": "FleetAgent", "temporal_state": "Running", "execution_mode": "container", "cpu": 4, "mem": 1024, "image": "nginx:alpine"},
+            ],
+            "edges": [{"source": "api", "target": "web", "type": "depends_on"}]
+        }
+
+    try:
+        import subprocess, json, re
+        proc = subprocess.run(
+            ["container", "ls", "--json"],
+            capture_output=True, text=True, timeout=10
+        )
+        containers = json.loads(proc.stdout) if proc.stdout else []
+        if isinstance(containers, dict):
+            containers = containers.get("containers", containers.get("data", []))
+
+        nodes, edges = [], []
+        seen = set()
+        for c in containers:
+            cid = c.get("id", c.get("name", "?"))
+            if cid in seen:
+                continue
+            seen.add(cid)
+            nodes.append({
+                "id": cid, "label": cid,
+                "role": "FleetAgent",
+                "temporal_state": c.get("state", c.get("status", "unknown")),
+                "execution_mode": "container",
+                "cpu": int(c.get("cpus", c.get("cpu", 0)) or 0),
+                "mem": int(c.get("memory", c.get("memory_mb", 0)) or 0),
+                "image": c.get("image", ""),
+                "address": c.get("addr", c.get("address", "")),
+            })
+
+        return {"nodes": nodes, "edges": edges}
+    except Exception as e:
+        import traceback
+        return {"error": str(e), "trace": traceback.format_exc()[-500:], "nodes": [], "edges": []}
+
+
 # ── Include infra-map graph routes ───────────────────────────────────
 import importlib.util, sys
 _infra_path = '/Users/kieranlal/workspace/compose-pkl/dashboard-plugin/infra-map/dashboard/plugin_api.py'
