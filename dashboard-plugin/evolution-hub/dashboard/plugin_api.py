@@ -677,7 +677,8 @@ async def live_topology(mock: bool = False):
             if not isinstance(cfg, dict):
                 continue
             status = c.get("status", {})
-            cid = cfg.get("name", status.get("id", "")) if isinstance(status, dict) else cfg.get("name", "")
+            cid = cfg.get("id", cfg.get("name", ""))
+            state = status if isinstance(status, str) else (status.get("state", "unknown") if isinstance(status, dict) else "unknown")
             if not cid or cid in seen:
                 continue
             seen.add(cid)
@@ -686,9 +687,6 @@ async def live_topology(mock: bool = False):
             if isinstance(img, dict):
                 image_ref = img.get("reference", "")
             res = cfg.get("resources", {}) if isinstance(cfg.get("resources"), dict) else {}
-            state = "unknown"
-            if isinstance(status, dict):
-                state = status.get("state", "unknown")
             nodes.append({
                 "id": cid, "label": cid,
                 "role": "FleetAgent",
