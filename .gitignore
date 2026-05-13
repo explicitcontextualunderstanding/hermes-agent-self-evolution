@@ -3,6 +3,7 @@ __pycache__/
 *$py.class
 *.egg-info/
 dist/
+!dashboard-plugin/**/dist/
 build/
 .eggs/
 *.egg
