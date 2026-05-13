@@ -700,6 +700,7 @@ async def live_topology(mock: bool = False):
 
         # ── Build edges from shared networks, volumes, slabs ──────────
         seen_edges = set()
+        gateway_networks = set()
         for c in containers:
             if not isinstance(c, dict): continue
             cfg = c.get("configuration", {})
@@ -746,6 +747,38 @@ async def live_topology(mock: bool = False):
                             "label": dst.split("/")[-1] or "volume",
                             "transport": "virtiofs"
                         })
+
+        # ── Add vmnet gateway nodes for each network ──────────────────
+        seen_nets = set()
+        for c in containers:
+            if not isinstance(c, dict): continue
+            cfg = c.get("configuration", {})
+            if not isinstance(cfg, dict): continue
+            nets = cfg.get("networks", []) or []
+            for n in nets:
+                net_name = n.get("network", "") if isinstance(n, dict) else n
+                if not net_name or net_name in seen_nets: continue
+                seen_nets.add(net_name)
+                gw_id = f"vmnet:{net_name}"
+                nodes.append({
+                    "id": gw_id, "label": f"vmnet ({net_name})",
+                    "role": "Anchor",
+                    "temporal_state": "running",
+                    "execution_mode": "native-lane",
+                    "cpu": 0, "mem": 0,
+                    "image": "vmnet-gateway",
+                    "address": "",
+                })
+                # Connect this container to the gateway
+                ek = f"{cid}->gw:{net_name}"
+                if ek not in seen_edges:
+                    seen_edges.add(ek)
+                    edges.append({
+                        "source": cid, "target": gw_id,
+                        "type": "network",
+                        "label": net_name,
+                        "transport": "vmnet"
+                    })
 
         return {"nodes": nodes, "edges": edges}
     except Exception as e:
