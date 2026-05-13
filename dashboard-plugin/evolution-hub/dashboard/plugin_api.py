@@ -698,40 +698,17 @@ async def live_topology(mock: bool = False):
                 "address": "",
             })
 
-        # ── Build edges from shared networks, volumes, slabs ──────────
+        # ── Build edges: containers → vmnet gateway only ──────────────
+        # Containers communicate through the host vmnet gateway, not
+        # directly to each other. Apple VZ uses allocationOnly vmnet mode.
         seen_edges = set()
-        gateway_networks = set()
         for c in containers:
             if not isinstance(c, dict): continue
             cfg = c.get("configuration", {})
             if not isinstance(cfg, dict): continue
             cid = cfg.get("id", "")
-            nets = cfg.get("networks", []) or []
-            for n in nets:
-                net_name = n.get("network", "") if isinstance(n, dict) else n
-                if not net_name: continue
-                # Find other containers on same network
-                for c2 in containers:
-                    if not isinstance(c2, dict): continue
-                    cfg2 = c2.get("configuration", {})
-                    if not isinstance(cfg2, dict): continue
-                    cid2 = cfg2.get("id", "")
-                    if cid2 <= cid: continue  # avoid duplicates
-                    nets2 = cfg2.get("networks", []) or []
-                    for n2 in nets2:
-                        n2name = n2.get("network", "") if isinstance(n2, dict) else n2
-                        if n2name == net_name:
-                            ek = f"{cid}->{cid2}"
-                            if ek not in seen_edges:
-                                seen_edges.add(ek)
-                                edges.append({
-                                    "source": cid, "target": cid2,
-                                    "type": "network",
-                                    "label": net_name,
-                                    "transport": "uds"
-                                })
 
-            # Mount edges to volume-backed containers
+            # Volume mount edges (persistent storage)
             mounts = cfg.get("mounts", []) or []
             for m in mounts:
                 if not isinstance(m, dict): continue
